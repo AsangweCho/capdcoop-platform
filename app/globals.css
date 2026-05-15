@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+:root {
+  --capd-navy: #0d2d6e;
+  --capd-green: #006b3d;
+  --capd-gold: #d4a017;
+  --capd-bg: #f8fafc;
+  --capd-border: #e2e8f0;
+  --capd-text: #0f172a;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: white;
+  color: var(--capd-text);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+a {
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+button {
+  transition: all 0.2s ease;
+}
