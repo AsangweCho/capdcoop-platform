@@ -26,11 +26,11 @@ export default function BrandLogo({
       width={compact ? 180 : 300}
       height={compact ? 60 : 110}
       priority
-      className={
-        compact
-          ? "h-14 w-auto object-contain"
-          : "h-24 w-auto object-contain"
-      }
+   className={
+  compact
+    ? "h-12 w-auto object-contain sm:h-14"
+    : "h-16 w-auto object-contain sm:h-20 lg:h-24"
+}
     />
   );
 }

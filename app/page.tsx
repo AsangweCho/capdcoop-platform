@@ -66,11 +66,11 @@ export default function Home() {
               Cooperative finance for real businesses
             </div>
 
-            <h1 className="text-5xl font-black leading-tight text-[#0D2D6E] md:text-7xl">
+            <h1 className="text-[2.65rem] font-black leading-[1.08] text-[#0D2D6E] sm:text-5xl md:text-6xl lg:text-7xl">
               Financing Businesses. Strengthening Communities.
             </h1>
 
-            <p className="mt-7 max-w-2xl text-xl leading-8 text-slate-600">
+            <p className="mt-6 max-w-2xl text-[1.05rem] leading-8 text-slate-600 sm:text-xl">
               CAPDCOOP is a modern cooperative helping members participate in
               shared economic growth while supporting productive small
               businesses with structured financing and practical supervision.
