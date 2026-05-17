@@ -192,7 +192,7 @@ export default function LoginPage() {
             <div className="mt-8 text-center text-sm text-slate-500">
                                    <p className="mt-6 text-center text-sm text-slate-600">
   Not yet a member?{" "}
-  <Link href="/membership" className="font-bold text-[var(--capd-navy)]">
+  <Link href="/membership/register" className="font-bold text-[var(--capd-navy)]">
     Create an account
   </Link>
 </p>

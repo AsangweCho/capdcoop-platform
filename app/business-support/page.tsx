@@ -8,8 +8,8 @@ export default function BusinessSupportPage() {
     <main className="min-h-screen bg-white text-slate-900">
 <SiteHeader />
 
-<section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-24">
-  <div className="mx-auto grid max-w-7xl items-center gap-14 px-6 lg:grid-cols-2">
+<section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-16">
+  <div className="mx-auto grid max-w-7xl items-center gap-8 px-6 lg:grid-cols-2">
     <div>
       <p className="font-black uppercase tracking-widest text-[#009B5A]">
         Business Support
@@ -58,7 +58,7 @@ export default function BusinessSupportPage() {
   </div>
 </section>
 
-      <section className="bg-[#F8FAFC] py-24">
+      <section className="bg-[#F8FAFC] py-16">
         <div className="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-2">
           <div>
             <p className="font-black uppercase tracking-widest text-[#009B5A]">Who qualifies?</p>
@@ -103,7 +103,7 @@ export default function BusinessSupportPage() {
         </div>
       </section>
 
-      <section className="bg-[#0D2D6E] py-20 text-white">
+      <section className="bg-[#0D2D6E] py-14 text-white">
         <div className="mx-auto max-w-5xl px-6 text-center">
           <h2 className="text-4xl font-black">Ready to apply for business support?</h2>
           <p className="mx-auto mt-5 max-w-3xl leading-8 text-white/75">

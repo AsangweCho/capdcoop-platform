@@ -7,7 +7,7 @@ export default function ContactPage() {
     <main className="min-h-screen bg-white text-slate-900">
 <SiteHeader />
 
-      <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-24">
+      <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-16">
         <div className="mx-auto max-w-7xl px-6">
           <p className="font-black uppercase tracking-widest text-[#009B5A]">
             Contact CAPDCOOP
@@ -25,7 +25,7 @@ export default function ContactPage() {
         </div>
       </section>
 
-      <section className="py-24">
+      <section className="py-16">
         <div className="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="grid gap-5">
             {[

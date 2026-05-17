@@ -51,6 +51,7 @@ export default function MemberPortal() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("MTN Mobile Money");
   const [paymentReference, setPaymentReference] = useState("");
+  const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [memberPayments, setMemberPayments] = useState<MemberPayment[]>([]);
@@ -143,105 +144,121 @@ async function loadFundingApplications(memberId: string) {
   }
 
   async function submitPayment() {
-    if (!member || !paymentAmount || !paymentReference) {
-      setPaymentMessage("Please complete all payment fields.");
-      return;
-    }
+  if (!member || !paymentAmount || !paymentReference || !paymentReceipt) {
+    setPaymentMessage("Please complete all payment fields and upload your receipt.");
+    return;
+  }
 
-    setSubmittingPayment(true);
-    setPaymentMessage("");
+  setSubmittingPayment(true);
+  setPaymentMessage("");
 
-    const { error } = await supabase.from("payments").insert({
-      member_id: member.id,
-      amount: Number(paymentAmount),
-      payment_method: paymentMethod,
-      reference: paymentReference,
-      payment_status: "pending",
-    });
+  const fileExt = paymentReceipt.name.split(".").pop();
+  const filePath = `${member.id}/${Date.now()}-${paymentReference}.${fileExt}`;
 
-    if (error) {
-      setPaymentMessage(error.message);
-      setSubmittingPayment(false);
-      return;
-    }
+  const { error: uploadError } = await supabase.storage
+    .from("payment-receipts")
+    .upload(filePath, paymentReceipt);
 
-    setPaymentMessage("Payment submitted successfully for admin review.");
-    setPaymentAmount("");
-    setPaymentReference("");
-
-    const { data: refreshedPayments, error: refreshError } = await supabase
-      .from("payments")
-      .select("id, amount, payment_method, reference, payment_status, created_at")
-      .eq("member_id", member.id)
-      .order("created_at", { ascending: false });
-
-    if (refreshError) {
-      console.error(refreshError);
-    }
-
-    setMemberPayments(refreshedPayments || []);
+  if (uploadError) {
+    setPaymentMessage(uploadError.message);
     setSubmittingPayment(false);
+    return;
   }
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[var(--capd-bg)] text-slate-900">
-        <p className="text-xl font-bold text-[#0D2D6E]">
-          Loading member dashboard...
-        </p>
-      </main>
-    );
+  const { error } = await supabase.from("payments").insert({
+    member_id: member.id,
+    amount: Number(paymentAmount),
+    payment_method: paymentMethod,
+    reference: paymentReference,
+    payment_status: "pending",
+    receipt_path: filePath,
+  });
+
+  if (error) {
+    setPaymentMessage(error.message);
+    setSubmittingPayment(false);
+    return;
   }
 
-  if (!member) {
+  setPaymentMessage("Payment submitted successfully for admin review.");
+  setPaymentAmount("");
+  setPaymentReference("");
+  setPaymentReceipt(null);
+
+  const { data: refreshedPayments, error: refreshError } = await supabase
+    .from("payments")
+    .select(
+      "id, amount, payment_method, reference, payment_status, created_at, receipt_path"
+    )
+    .eq("member_id", member.id)
+    .order("created_at", { ascending: false });
+
+  if (refreshError) {
+    console.error(refreshError);
+  }
+
+  setMemberPayments(refreshedPayments || []);
+setSubmittingPayment(false);
+}
+
+if (loading) {
   return (
-    <main className="min-h-screen bg-[#F8FAFC] p-10">
-      <h1 className="text-3xl font-black text-[#0D2D6E]">
-        Member record not found
-      </h1>
-
-      <p className="mt-3 text-slate-600">
-        Your account is active, but no cooperative member profile has been linked yet.
-        Please contact CAPDCOOP administration.
+    <main className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+      <p className="text-lg font-semibold text-slate-600">
+        Loading member portal...
       </p>
-
-      <button
-        onClick={handleLogout}
-        className="mt-6 rounded-2xl bg-[#0D2D6E] px-6 py-3 font-semibold text-white hover:opacity-90"
-      >
-        Return to Login
-      </button>
     </main>
   );
 }
 
-  const metrics = [
-    {
-      title: "Total Shares Held",
-      value: member.total_shares.toLocaleString(),
-      note: "Approved allocations",
-      icon: PieChart,
-    },
-    {
-      title: "Share Portfolio Value",
-      value: `FCFA ${Number(member.portfolio_value).toLocaleString()}`,
-      note: "Current records",
-      icon: WalletCards,
-    },
-    {
-      title: "Declared Dividends",
-      value: `FCFA ${Number(member.declared_dividends).toLocaleString()}`,
-      note: "Official declarations only",
-      icon: BadgeDollarSign,
-    },
-    {
-      title: "Membership Status",
-      value: member.membership_status,
-      note: member.member_number,
-      icon: LayoutDashboard,
-    },
-  ];
+if (!member) {
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-[#F8FAFC] px-6">
+      <div className="max-w-xl rounded-3xl bg-white p-10 shadow-xl text-center">
+        <h1 className="text-3xl font-black text-[#0D2D6E]">
+          Member record not found
+        </h1>
 
+        <p className="mt-4 text-slate-600">
+          Your login is valid, but no CAPDCOOP member record is linked to this account.
+        </p>
+
+        <button
+          onClick={handleLogout}
+          className="mt-6 rounded-2xl bg-[#0D2D6E] px-6 py-3 font-bold text-white hover:opacity-90"
+        >
+          Return to Login
+        </button>
+      </div>
+    </main>
+  );
+}
+const metrics = [
+  {
+    title: "Total Shares Held",
+    value: member.total_shares.toLocaleString(),
+    note: "Approved allocations",
+    icon: PieChart,
+  },
+  {
+    title: "Share Portfolio Value",
+    value: `FCFA ${Number(member.portfolio_value).toLocaleString()}`,
+    note: "Current records",
+    icon: WalletCards,
+  },
+  {
+    title: "Declared Dividends",
+    value: `FCFA ${Number(member.declared_dividends).toLocaleString()}`,
+    note: "Official declarations only",
+    icon: BadgeDollarSign,
+  },
+  {
+    title: "Membership Status",
+    value: member.membership_status,
+    note: member.member_number,
+    icon: LayoutDashboard,
+  },
+];
   return (
     <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <header className="border-b bg-white">
@@ -295,7 +312,6 @@ async function loadFundingApplications(memberId: string) {
     </p>
   </div>
 </div>
-
         <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {metrics.map(({ title, value, note, icon: Icon }) => (
            <Card key={title} className="border-slate-200 bg-white shadow-sm">
@@ -370,6 +386,20 @@ async function loadFundingApplications(memberId: string) {
                   placeholder="Enter reference"
                 />
               </div>
+              <div>
+  <label className="text-sm font-bold text-slate-600">
+    Upload Payment Receipt
+  </label>
+
+  <input
+    type="file"
+    accept="image/*,.pdf"
+    onChange={(event) =>
+      setPaymentReceipt(event.target.files?.[0] || null)
+    }
+    className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+  />
+</div>
             </div>
 
             {paymentMessage && (

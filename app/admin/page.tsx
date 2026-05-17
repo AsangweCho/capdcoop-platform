@@ -14,6 +14,7 @@ type Payment = {
   payment_method: string;
   reference: string;
   payment_status: string;
+  receipt_path: string | null;
   created_at: string;
   members:
     | {
@@ -180,22 +181,23 @@ export default function AdminDashboard() {
     setLoadingPayments(true);
 
     const { data, error } = await supabase
-      .from("payments")
-      .select(
-        `
-        id,
-        amount,
-        payment_method,
-        reference,
-        payment_status,
-        created_at,
-        members (
-          full_name,
-          email
-        )
-      `
-      )
-      .order("created_at", { ascending: false });
+  .from("payments")
+  .select(
+    `
+    id,
+    amount,
+    payment_method,
+    reference,
+    payment_status,
+    receipt_path,
+    created_at,
+    members (
+      full_name,
+      email
+    )
+  `
+  )
+  .order("created_at", { ascending: false });
 
     if (error) console.error(error);
 
@@ -239,6 +241,18 @@ async function activateMember(memberId: string) {
         : member
     )
   );
+}
+async function openPaymentReceipt(receiptPath: string) {
+  const { data, error } = await supabase.storage
+    .from("payment-receipts")
+    .createSignedUrl(receiptPath, 60);
+
+  if (error || !data?.signedUrl) {
+    console.error(error);
+    return;
+  }
+
+  window.open(data.signedUrl, "_blank");
 }
 
   async function loadApplications() {
@@ -696,16 +710,17 @@ async function activateMember(memberId: string) {
               <div className="mt-6 overflow-x-auto">
                 <table className="w-full min-w-[850px] text-left text-sm">
                   <thead>
-                    <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-                      <th className="py-4">Member</th>
-                      <th className="py-4">Email</th>
-                      <th className="py-4">Amount</th>
-                      <th className="py-4">Method</th>
-                      <th className="py-4">Reference</th>
-                      <th className="py-4">Status</th>
-                      <th className="py-4">Date</th>
-                      <th className="py-4">Action</th>
-                    </tr>
+                 <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+  <th className="py-4">Member</th>
+  <th className="py-4">Email</th>
+  <th className="py-4">Amount</th>
+  <th className="py-4">Method</th>
+  <th className="py-4">Reference</th>
+  <th className="py-4">Status</th>
+  <th className="py-4">Date</th>
+  <th className="py-4">Action</th>
+  <th className="py-4">Receipt</th>
+</tr>
                   </thead>
 
                   <tbody>
@@ -717,58 +732,69 @@ async function activateMember(memberId: string) {
                       return (
                         <tr key={payment.id} className="border-b">
                           <td className="py-4 font-bold text-[var(--capd-navy)]">
-                            {member?.full_name || "Unknown"}
-                          </td>
+  {member?.full_name || "Unknown"}
+</td>
 
-                          <td className="py-4 text-slate-600">
-                            {member?.email || "-"}
-                          </td>
+<td className="py-4 text-slate-600">
+  {member?.email || "-"}
+</td>
 
-                          <td className="py-4 font-bold">
-                            FCFA {Number(payment.amount).toLocaleString()}
-                          </td>
+<td className="py-4 font-bold">
+  FCFA {Number(payment.amount).toLocaleString()}
+</td>
 
-                          <td className="py-4 text-slate-600">
-                            {payment.payment_method}
-                          </td>
+<td className="py-4 text-slate-600">
+  {payment.payment_method}
+</td>
 
-                          <td className="py-4 text-slate-600">
-                            {payment.reference}
-                          </td>
+<td className="py-4 text-slate-600">
+  {payment.reference}
+</td>
 
-                          <td className="py-4">
-                            <span
-                              className={
-                                payment.payment_status === "approved"
-                                  ? "rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700"
-                                  : "rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700"
-                              }
-                            >
-                              {payment.payment_status}
-                            </span>
-                          </td>
+<td className="py-4">
+  <span
+    className={
+      payment.payment_status === "approved"
+        ? "rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700"
+        : "rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700"
+    }
+  >
+    {payment.payment_status}
+  </span>
+</td>
 
-                          <td className="py-4 text-slate-600">
-                            {new Date(payment.created_at).toLocaleDateString()}
-                          </td>
+<td className="py-4 text-slate-600">
+  {new Date(payment.created_at).toLocaleDateString()}
+</td>
 
-                          <td className="py-4">
-                            {payment.payment_status === "pending" ? (
-                              <Button
-                                onClick={() => approvePayment(payment.id)}
-                                disabled={approvingId === payment.id}
-                                className="px-4 py-2"
-                              >
-                                {approvingId === payment.id
-                                  ? "Approving..."
-                                  : "Approve"}
-                              </Button>
-                            ) : (
-                              <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
-                                Approved
-                              </span>
-                            )}
-                          </td>
+<td className="py-4">
+  {payment.payment_status === "pending" ? (
+    <Button
+      onClick={() => approvePayment(payment.id)}
+      disabled={approvingId === payment.id}
+      className="px-4 py-2"
+    >
+      {approvingId === payment.id ? "Approving..." : "Approve"}
+    </Button>
+  ) : (
+    <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
+      Approved
+    </span>
+  )}
+</td>
+
+<td className="py-4">
+  {payment.receipt_path ? (
+    <Button
+      onClick={() => openPaymentReceipt(payment.receipt_path!)}
+      className="px-4 py-2"
+    >
+      View Receipt
+    </Button>
+  ) : (
+    <span className="text-slate-400">No receipt</span>
+  )}
+</td>
                         </tr>
                       );
                     })}

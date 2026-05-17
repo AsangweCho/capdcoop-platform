@@ -40,7 +40,7 @@ export default function FAQPage() {
     <main className="min-h-screen bg-white text-slate-900">
     <SiteHeader />
 
-      <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-24">
+      <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-16">
         <div className="mx-auto max-w-7xl px-6">
           <p className="font-black uppercase tracking-widest text-[#009B5A]">
             Frequently Asked Questions
@@ -58,7 +58,7 @@ export default function FAQPage() {
         </div>
       </section>
 
-      <section className="py-24">
+      <section className="py-16">
         <div className="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-[0.75fr_1.25fr]">
           <div className="rounded-[2rem] bg-[#0D2D6E] p-8 text-white">
             <HelpCircle className="text-[#D4A017]" size={40} />
@@ -111,7 +111,7 @@ export default function FAQPage() {
         </div>
       </section>
 
-      <section className="bg-[#F8FAFC] py-20">
+      <section className="bg-[#F8FAFC] py-14">
         <div className="mx-auto max-w-5xl px-6 text-center">
           <h2 className="text-4xl font-black text-[#0D2D6E]">
             Still have questions?

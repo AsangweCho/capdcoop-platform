@@ -2,6 +2,7 @@ import Link from "next/link";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import Image from "next/image";
+import BrandLogo from "@/components/BrandLogo";
 import {
   ArrowRight,
   Building2,
@@ -17,50 +18,74 @@ export default function Home() {
     <main className="min-h-screen bg-white text-slate-900">
       <header className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <a href="/" className="block">
-            <div className="text-2xl font-black text-[#0D2D6E]">CAPDCOOP</div>
-            <div className="text-xs font-semibold text-slate-500">
-              Stronger Together
-            </div>
-          </a>
+<Link href="/" className="flex items-center">
+  <BrandLogo compact />
+</Link>
 
-          <nav className="hidden items-center gap-7 text-sm font-bold text-slate-700 lg:flex">
-            <a href="/about" className="hover:text-[#0D2D6E]">
-              About
-            </a>
-            <a href="/membership" className="hover:text-[#0D2D6E]">
-              Membership
-            </a>
-            <a href="/business-support" className="hover:text-[#0D2D6E]">
-              Business Support
-            </a>
-            <a href="/faq" className="hover:text-[#0D2D6E]">
-              FAQ
-            </a>
-            <a href="/contact" className="hover:text-[#0D2D6E]">
-              Contact
-            </a>
-          </nav>
+          <nav className="hidden items-center gap-3 lg:flex">
+  <Link
+    href="/about"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    About
+  </Link>
 
-          <div className="hidden items-center gap-3 md:flex">
-            <a
-              href="/login"
-              className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              Login
-            </a>
-            <a
-              href="/apply"
-              className="rounded-2xl bg-[#0D2D6E] px-5 py-3 text-sm font-bold text-white hover:opacity-90"
-            >
-              Apply
-            </a>
-          </div>
+  <Link
+    href="/membership"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Membership
+  </Link>
+
+  <Link
+    href="/investors"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Investors
+  </Link>
+
+  <Link
+    href="/business-support"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Business Support
+  </Link>
+
+  <Link
+    href="/faq"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    FAQ
+  </Link>
+
+  <Link
+    href="/contact"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Contact
+  </Link>
+</nav>
+
+  <div className="hidden items-center gap-3 md:flex">
+  <Link
+    href="/login"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Login
+  </Link>
+
+  <Link
+    href="/apply"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Apply
+  </Link>
+</div>
         </div>
       </header>
 
       <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50">
-        <div className="mx-auto grid max-w-7xl items-center gap-14 px-6 py-24 lg:grid-cols-2">
+        <div className="mx-auto grid max-w-7xl items-center gap-8 px-6 py-14 lg:grid-cols-2">
           <div>
             <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-[#009B5A]/10 px-4 py-2 text-sm font-black text-[#007A46]">
               <ShieldCheck size={16} />
@@ -93,7 +118,7 @@ export default function Home() {
               </a>
             </div>
 
-            <div className="mt-10 grid gap-3 sm:grid-cols-2">
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
               {[
                 "Member-owned cooperative model",
                 "Structured share participation",
@@ -152,7 +177,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-[#F8FAFC] py-24">
+      <section className="bg-[#F8FAFC] py-16">
         <div className="mx-auto max-w-7xl px-6">
           <div className="mx-auto max-w-3xl text-center">
             <p className="font-black uppercase tracking-widest text-[#009B5A]">
@@ -200,7 +225,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-white py-24">
+      <section className="bg-white py-16">
         <div className="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-2">
           <div className="rounded-[2rem] bg-[#0D2D6E] p-8 text-white">
             <Sprout className="text-[#D4A017]" size={36} />
@@ -239,7 +264,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-[#0D2D6E] py-24 text-white">
+      <section className="bg-[#0D2D6E] py-16 text-white">
         <div className="mx-auto max-w-5xl px-6 text-center">
           <p className="font-black uppercase tracking-widest text-[#D4A017]">
             Stronger Together

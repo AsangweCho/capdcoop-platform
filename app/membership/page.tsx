@@ -22,13 +22,49 @@ export default function MembershipPage() {
   />
 </Link>
 
-          <nav className="hidden gap-7 text-sm font-bold text-slate-700 lg:flex">
-            <a href="/about">About</a>
-            <a href="/membership">Membership</a>
-            <a href="/business-support">Business Support</a>
-            <a href="/faq">FAQ</a>
-            <a href="/contact">Contact</a>
-          </nav>
+<nav className="hidden items-center gap-3 lg:flex">
+  <Link
+    href="/about"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    About
+  </Link>
+
+  <Link
+    href="/membership"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Membership
+  </Link>
+
+  <Link
+    href="/investors"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Investors
+  </Link>
+
+  <Link
+    href="/business-support"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Business Support
+  </Link>
+
+  <Link
+    href="/faq"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    FAQ
+  </Link>
+
+  <Link
+    href="/contact"
+    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+  >
+    Contact
+  </Link>
+</nav>
 
           <a
             href="/login"
@@ -38,7 +74,7 @@ export default function MembershipPage() {
           </a>
         </div>
       </header>
-<section className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-20 lg:grid-cols-2">
+<section className="mx-auto grid max-w-7xl items-center gap-8 px-6 py-14 lg:grid-cols-2">
   <div>
     <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-green)]">
       Membership
@@ -92,7 +128,7 @@ export default function MembershipPage() {
   </div>
 </section>
 
-      <section className="py-24">
+      <section className="py-16">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid gap-7 md:grid-cols-3">
             {[
@@ -127,7 +163,7 @@ export default function MembershipPage() {
         </div>
       </section>
 
-      <section className="bg-[#F8FAFC] py-24">
+      <section className="bg-[#F8FAFC] py-16">
         <div className="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-2">
           <div>
             <p className="font-black uppercase tracking-widest text-[#009B5A]">
@@ -191,7 +227,7 @@ export default function MembershipPage() {
         </div>
       </section>
 
-      <section className="bg-[#0D2D6E] py-20 text-white">
+      <section className="bg-[#0D2D6E] py-14 text-white">
         <div className="mx-auto max-w-5xl px-6 text-center">
           <h2 className="text-4xl font-black">
             Membership is participation, responsibility, and shared growth.
