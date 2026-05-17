@@ -1,5 +1,4 @@
-import SiteHeader from "@/components/SiteHeader";
-import SiteFooter from "@/components/SiteFooter";
+import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowRight,
@@ -13,65 +12,121 @@ import {
 export default function MembershipPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-<SiteHeader />
+      <header className="border-b bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+           <Link href="/">
+  <img
+    src="/capdcoop-logo.png"
+    alt="CAPDCOOP Logo"
+    className="h-16 w-auto"
+  />
+</Link>
 
-  <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-24">
-  <div className="mx-auto grid max-w-7xl items-center gap-14 px-6 lg:grid-cols-2">
-    <div>
-      <p className="font-black uppercase tracking-widest text-[#009B5A]">
-        Membership
-      </p>
+          <nav className="hidden gap-7 text-sm font-bold text-slate-700 lg:flex">
+            <a href="/about">About</a>
+            <a href="/membership">Membership</a>
+            <a href="/business-support">Business Support</a>
+            <a href="/faq">FAQ</a>
+            <a href="/contact">Contact</a>
+          </nav>
 
-      <h1 className="mt-4 text-5xl font-black leading-tight text-[#0D2D6E] md:text-7xl">
-        Become part of a cooperative built for shared growth.
-      </h1>
+          <a
+            href="/login"
+            className="rounded-2xl bg-[#0D2D6E] px-5 py-3 text-sm font-bold text-white"
+          >
+            Member Login
+          </a>
+        </div>
+      </header>
+<section className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-20 lg:grid-cols-2">
+  <div>
+    <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-green)]">
+      Membership
+    </p>
 
-      <p className="mt-7 max-w-3xl text-xl leading-8 text-slate-600">
-        CAPDCOOP membership gives individuals a structured way to
-        participate in cooperative ownership, track share records,
-        and support real business growth in the community.
-      </p>
+    <h1 className="mt-5 text-5xl font-black leading-tight text-[var(--capd-navy)] md:text-6xl">
+      Become part of a cooperative built for shared growth.
+    </h1>
 
-      <div className="mt-9 flex flex-wrap gap-4">
-        <a
-          href="/contact"
-          className="inline-flex items-center rounded-2xl bg-[#0D2D6E] px-7 py-4 font-bold text-white"
-        >
-          Start Membership Enquiry
-          <ArrowRight className="ml-2" size={18} />
-        </a>
+    <p className="mt-7 max-w-2xl text-xl leading-8 text-slate-600">
+      CAPDCOOP membership gives individuals a structured way to participate in
+      cooperative ownership, track share records, and support real business
+      growth in the community.
+    </p>
 
-        <a
-          href="/login"
-          className="rounded-2xl border border-slate-300 bg-white px-7 py-4 font-bold text-slate-700"
-        >
-          Member Login
-        </a>
-      </div>
+    <div className="mt-9 flex flex-wrap gap-4">
+      <a
+        href="/membership/register"
+        className="inline-flex items-center rounded-2xl bg-[#0D2D6E] px-7 py-4 font-bold text-white"
+      >
+        Become a Member →
+      </a>
+
+      <a
+        href="/login"
+        className="inline-flex items-center rounded-2xl border border-slate-300 bg-white px-7 py-4 font-bold text-[#0D2D6E]"
+      >
+        Member Login
+      </a>
+    </div>
+  </div>
+
+  <div className="relative">
+    <div className="overflow-hidden rounded-[2rem] shadow-xl">
+      <img
+        src="/images/membership-members.jpg"
+        alt="CAPDCOOP Membership"
+        className="h-full w-full object-cover"
+      />
     </div>
 
-    <div className="relative">
-      <div className="overflow-hidden rounded-[2rem] shadow-2xl">
-        <Image
-          src="/images/membership-members.jpg"
-          alt="CAPDCOOP members"
-          width={1200}
-          height={900}
-          className="h-full w-full object-cover"/>
-      </div>
+    <div className="absolute -bottom-8 left-8 rounded-3xl bg-white p-6 shadow-xl">
+      <p className="text-xs font-black uppercase tracking-widest text-[var(--capd-green)]">
+        Shared Ownership
+      </p>
 
-      <div className="absolute -bottom-6 -left-6 rounded-3xl bg-white p-6 shadow-xl">
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#009B5A]">
-          Shared Ownership
-        </p>
-
-        <p className="mt-2 text-2xl font-black text-[#0D2D6E]">
-          Building wealth together
-        </p>
-      </div>
+      <p className="mt-2 text-2xl font-black text-[var(--capd-navy)]">
+        Building wealth together
+      </p>
     </div>
   </div>
 </section>
+
+      <section className="py-24">
+        <div className="mx-auto max-w-7xl px-6">
+          <div className="grid gap-7 md:grid-cols-3">
+            {[
+              {
+                title: "Share Participation",
+                text: "Members can purchase shares and track approved allocations through their dashboard.",
+                icon: Users,
+              },
+              {
+                title: "Declared Dividends",
+                text: "Members can view declared dividends when officially approved by the cooperative.",
+                icon: BadgeDollarSign,
+              },
+              {
+                title: "Digital Records",
+                text: "Payments, share values, documents, and account activity are managed transparently.",
+                icon: FileText,
+              },
+            ].map(({ title, text, icon: Icon }) => (
+              <div
+                key={title}
+                className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm"
+              >
+                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0D2D6E]/10 text-[#0D2D6E]">
+                  <Icon size={26} />
+                </div>
+                <h3 className="text-2xl font-black text-[#0D2D6E]">{title}</h3>
+                <p className="mt-4 leading-7 text-slate-600">{text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="bg-[#F8FAFC] py-24">
         <div className="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-2">
           <div>

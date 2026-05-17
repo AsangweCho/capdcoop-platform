@@ -1,3 +1,4 @@
+import Link from "next/link";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import Image from "next/image";
@@ -77,13 +78,6 @@ export default function Home() {
             </p>
 
             <div className="mt-9 flex flex-wrap gap-4">
-              <a
-                href="/membership"
-                className="inline-flex items-center rounded-2xl bg-[#0D2D6E] px-7 py-4 font-bold text-white hover:opacity-90"
-              >
-                Become a Member <ArrowRight className="ml-2" size={18} />
-              </a>
-
               <a
                 href="/apply"
                 className="inline-flex items-center rounded-2xl bg-[#009B5A] px-7 py-4 font-bold text-white hover:opacity-90"

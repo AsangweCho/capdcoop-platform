@@ -38,6 +38,13 @@ type MemberRecord = {
   portfolio_value: number;
   declared_dividends: number;
   created_at: string;
+  date_of_birth: string | null;
+gender: string | null;
+city: string | null;
+national_id_number: string | null;
+occupation: string | null;
+business_name: string | null;
+business_sector: string | null;
 };
 
 type BusinessApplication = {
@@ -199,21 +206,40 @@ async function handleLogout() {
   await supabase.auth.signOut();
   window.location.href = "/login";
 }
-  async function loadMembers() {
-    setLoadingMembers(true);
+ async function loadMembers() {
+  setLoadingMembers(true);
 
-    const { data, error } = await supabase
-      .from("members")
-      .select(
-        "id, full_name, email, phone, member_number, membership_status, total_shares, portfolio_value, declared_dividends, created_at"
-      )
-      .order("created_at", { ascending: false });
+  const { data, error } = await supabase
+    .from("members")
+    .select(
+      "id, full_name, email, phone, date_of_birth, gender, city, national_id_number, occupation, business_name, business_sector, member_number, membership_status, total_shares, portfolio_value, declared_dividends, created_at"
+    )
+    .order("created_at", { ascending: false });
 
-    if (error) console.error(error);
+  if (error) console.error(error);
 
-    setMembers((data as MemberRecord[]) || []);
-    setLoadingMembers(false);
+  setMembers((data as MemberRecord[]) || []);
+  setLoadingMembers(false);
+}
+async function activateMember(memberId: string) {
+  const { error } = await supabase
+    .from("members")
+    .update({ membership_status: "active" })
+    .eq("id", memberId);
+
+  if (error) {
+    console.error(error);
+    return;
   }
+
+  setMembers((current) =>
+    current.map((member) =>
+      member.id === memberId
+        ? { ...member, membership_status: "active" }
+        : member
+    )
+  );
+}
 
   async function loadApplications() {
     setLoadingApplications(true);
@@ -1040,7 +1066,102 @@ async function handleLogout() {
             )}
           </CardContent>
         </Card>
+<Card className="mt-8 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <h2 className="text-2xl font-black text-[#0D2D6E]">
+          Pending Membership Registrations
+        </h2>
 
+        <p className="mt-2 text-sm text-slate-600">
+          Follow up with new members who registered online but have not yet been activated.
+        </p>
+      </div>
+
+      <div className="rounded-2xl bg-amber-50 px-4 py-2 text-sm font-bold text-amber-700">
+        {
+          members.filter(
+            (member) => member.membership_status === "pending"
+          ).length
+        }{" "}
+        pending
+      </div>
+    </div>
+
+    {members.filter((member) => member.membership_status === "pending")
+      .length === 0 ? (
+      <p className="mt-6 font-semibold text-slate-600">
+        No pending membership registrations.
+      </p>
+    ) : (
+      <div className="mt-6 overflow-x-auto">
+        <table className="w-full min-w-[1100px] text-left text-sm">
+          <thead>
+            <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+              <th className="py-4">Name</th>
+              <th className="py-4">Email</th>
+              <th className="py-4">Phone</th>
+              <th className="py-4">City</th>
+              <th className="py-4">Gender</th>
+              <th className="py-4">Occupation</th>
+              <th className="py-4">Business</th>
+              <th className="py-4">Sector</th>
+              <th className="py-4">Date</th>
+              <th className="py-4">Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {members
+              .filter((member) => member.membership_status === "pending")
+              .map((member) => (
+                <tr key={member.id} className="border-b">
+                  <td className="py-4 font-bold text-[#0D2D6E]">
+                    {member.full_name}
+                  </td>
+
+                  <td className="py-4 text-slate-600">{member.email}</td>
+
+                  <td className="py-4 text-slate-600">{member.phone || "-"}</td>
+
+                  <td className="py-4 text-slate-600">{member.city || "-"}</td>
+
+                  <td className="py-4 text-slate-600">
+                    {member.gender || "-"}
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+                    {member.occupation || "-"}
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+                    {member.business_name || "-"}
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+                    {member.business_sector || "-"}
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+                    {new Date(member.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="py-4">
+  <Button
+    onClick={() => activateMember(member.id)}
+    className="px-4 py-2"
+  >
+    Activate
+  </Button>
+</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </CardContent>
+</Card>
         <Card className="mt-8">
           <CardContent className="p-6">
             <div className="flex items-center justify-between gap-4">

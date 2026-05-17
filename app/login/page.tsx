@@ -1,5 +1,5 @@
 "use client";
-
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import BrandLogo from "@/components/BrandLogo";
@@ -122,7 +122,14 @@ export default function LoginPage() {
             <div className="mb-8 flex justify-center lg:hidden">
               <BrandLogo compact />
             </div>
-
+<div className="mb-6">
+  <Link
+    href="/"
+    className="inline-flex items-center rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:opacity-90"
+  >
+    Back to Home
+  </Link>
+</div>
             <h2 className="text-center text-3xl font-black text-[var(--capd-navy)]">
               Platform Login
             </h2>
@@ -137,6 +144,7 @@ export default function LoginPage() {
                   Email address
                 </label>
                 <input
+                
   id="email"
   name="email"
   type="email"
@@ -182,6 +190,12 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-8 text-center text-sm text-slate-500">
+                                   <p className="mt-6 text-center text-sm text-slate-600">
+  Not yet a member?{" "}
+  <Link href="/membership" className="font-bold text-[var(--capd-navy)]">
+    Create an account
+  </Link>
+</p>
               CAPDCOOP Cooperative Platform
             </div>
           </div>
