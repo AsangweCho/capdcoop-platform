@@ -12,10 +12,12 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import BrandLogo from "@/components/BrandLogo";
+import Link from "next/link";
 
 type Member = {
   id: string;
   full_name: string;
+  phone: string | null;
   member_number: string;
   membership_status: string;
   total_shares: number;
@@ -31,6 +33,17 @@ type MemberPayment = {
   payment_status: string;
   created_at: string;
 };
+type FundingApplication = {
+  id: string;
+  business_name: string;
+  business_type: string;
+  requested_amount: number;
+  daily_revenue_estimate: number;
+  application_status: string;
+  assigned_officer: string | null;
+  review_notes: string | null;
+  created_at: string;
+};
 
 export default function MemberPortal() {
   const [member, setMember] = useState<Member | null>(null);
@@ -41,48 +54,88 @@ export default function MemberPortal() {
   const [paymentMessage, setPaymentMessage] = useState("");
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [memberPayments, setMemberPayments] = useState<MemberPayment[]>([]);
+  const [fundingApplications, setFundingApplications] = useState<
+  FundingApplication[]
+>([]);
+const [loadingApplications, setLoadingApplications] = useState(true);
 
   useEffect(() => {
     async function loadMember() {
-      const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await supabase.auth.getUser();
 
-      if (!userData.user) {
-        window.location.href = "/login";
-        return;
-      }
+  if (!userData.user) {
+    window.location.href = "/login";
+    return;
+  }
 
-      const { data, error } = await supabase
-        .from("members")
-        .select(
-          "id, full_name, member_number, membership_status, total_shares, portfolio_value, declared_dividends"
-        )
-        .eq("auth_user_id", userData.user.id)
-        .single();
+  const { data, error } = await supabase
+    .from("members")
+   .select(
+  "id, full_name, phone, member_number, membership_status, total_shares, portfolio_value, declared_dividends"
+)
+    .eq("auth_user_id", userData.user.id)
+    .single();
 
-      if (error) {
-        console.error(error);
-        setLoading(false);
-        return;
-      }
+  if (error) {
+    console.error(error);
+    setLoading(false);
+    return;
+  }
 
-      setMember(data);
+  setMember(data);
 
-      const { data: paymentData, error: paymentError } = await supabase
-        .from("payments")
-        .select("id, amount, payment_method, reference, payment_status, created_at")
-        .eq("member_id", data.id)
-        .order("created_at", { ascending: false });
+  const { data: paymentData, error: paymentError } = await supabase
+    .from("payments")
+    .select(
+      "id, amount, payment_method, reference, payment_status, created_at"
+    )
+    .eq("member_id", data.id)
+    .order("created_at", { ascending: false });
 
-      if (paymentError) {
-        console.error(paymentError);
-      }
+  if (paymentError) {
+    console.error(paymentError);
+  }
 
-      setMemberPayments(paymentData || []);
-      setLoading(false);
-    }
+  setMemberPayments(paymentData || []);
+  await loadFundingApplications(data.id);
+  
+const { data: applicationData, error: applicationError } = await supabase
+  .from("business_applications")
+  .select(
+    "id, business_name, business_type, requested_amount, daily_revenue_estimate, application_status, assigned_officer, review_notes, created_at"
+  )
+  .eq("member_id", data.id)
+  .order("created_at", { ascending: false });
+  if (applicationError) {
+    console.error(applicationError);
+  }
 
+  setFundingApplications(applicationData || []);
+
+  setLoading(false);
+}
     loadMember();
   }, []);
+async function loadFundingApplications(memberId: string) {
+  setLoadingApplications(true);
+
+  const { data: applicationData, error: applicationError } = await supabase
+    .from("business_applications")
+    .select(
+      "id, business_name, business_type, requested_amount, daily_revenue_estimate, application_status, assigned_officer, review_notes, created_at"
+    )
+    .eq("member_id", memberId)
+    .order("created_at", { ascending: false });
+
+  if (applicationError) {
+    console.error(applicationError);
+    setLoadingApplications(false);
+    return;
+  }
+
+  setFundingApplications(applicationData || []);
+  setLoadingApplications(false);
+}
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -201,15 +254,23 @@ export default function MemberPortal() {
 </div>
 
           <div className="flex items-center gap-3">
-            <Button className="px-5 py-3">Buy More Shares</Button>
+            <div className="flex items-center gap-3">
+  <Button className="px-5 py-3">Buy More Shares</Button>
 
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              <LogOut size={18} className="mr-2" />
-              Logout
-            </button>
+  <Link href="/apply">
+    <Button className="px-5 py-3 bg-[var(--capd-green)] hover:opacity-90">
+      Apply for Funding
+    </Button>
+  </Link>
+
+  <button
+    onClick={handleLogout}
+    className="inline-flex items-center rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
+  >
+    <LogOut size={18} className="mr-2" />
+    Logout
+  </button>
+</div>
           </div>
         </div>
       </header>
@@ -392,6 +453,88 @@ export default function MemberPortal() {
             )}
           </CardContent>
         </Card>
+        <Card className="mt-8 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <h2 className="text-2xl font-black text-[#0D2D6E]">
+          My Funding Applications
+        </h2>
+
+        <p className="mt-2 text-sm text-slate-600">
+          Track your business funding requests and review progress.
+        </p>
+      </div>
+
+      <Link href="/apply">
+        <Button className="px-5 py-3 bg-[var(--capd-green)] hover:opacity-90">
+          New Application
+        </Button>
+      </Link>
+    </div>
+
+    {fundingApplications.length === 0 ? (
+      <p className="mt-6 font-semibold text-slate-600">
+        You have not submitted any funding applications yet.
+      </p>
+    ) : (
+      <div className="mt-6 overflow-x-auto">
+        <table className="w-full min-w-[850px] text-left text-sm">
+          <thead>
+            <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+              <th className="py-4">Business</th>
+              <th className="py-4">Type</th>
+              <th className="py-4">Requested</th>
+              <th className="py-4">Daily Revenue</th>
+              <th className="py-4">Status</th>
+              <th className="py-4">Officer</th>
+              <th className="py-4">Date</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {fundingApplications.map((application) => (
+              <tr key={application.id} className="border-b">
+                <td className="py-4 font-bold text-[#0D2D6E]">
+                  {application.business_name}
+                </td>
+
+                <td className="py-4 text-slate-600">
+                  {application.business_type}
+                </td>
+
+                <td className="py-4 font-bold">
+                  FCFA {Number(application.requested_amount).toLocaleString()}
+                </td>
+
+                <td className="py-4 font-bold">
+                  FCFA{" "}
+                  {Number(
+                    application.daily_revenue_estimate
+                  ).toLocaleString()}
+                </td>
+
+                <td className="py-4">
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+                    {application.application_status.replaceAll("_", " ")}
+                  </span>
+                </td>
+
+                <td className="py-4 text-slate-600">
+                  {application.assigned_officer || "Not assigned"}
+                </td>
+
+                <td className="py-4 text-slate-600">
+                  {new Date(application.created_at).toLocaleDateString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </CardContent>
+</Card>
       </section>
     </main>
   );

@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import BrandLogo from "@/components/BrandLogo";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -17,49 +20,74 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error: loginError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      setError(error.message);
+    if (loginError) {
+      setError(loginError.message);
       setLoading(false);
       return;
     }
 
-    const { data: userData } = await supabase.auth.getUser();
+    const user = data.user;
 
-    if (!userData.user) {
-      setError("Authentication failed.");
+    if (!user) {
+      setError("Authentication failed. Please try again.");
       setLoading(false);
       return;
     }
 
-    const role = userData.user.user_metadata?.role;
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    if (role === "admin") {
-      window.location.href = "/admin";
+
+    if (profileError) {
+      setError(profileError.message);
+      setLoading(false);
       return;
     }
+
+    if (!profile) {
+      setError("User profile not found.");
+      setLoading(false);
+      return;
+    }
+
+   console.log("PROFILE:", profile);
+    if (profile.role === "admin" || profile.role === "super_admin") {
+  window.location.href = "/admin";
+  return;
+}
 
     const { data: memberData, error: memberError } = await supabase
       .from("members")
       .select("must_change_password")
-      .eq("auth_user_id", userData.user.id)
-      .single();
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
 
-    if (memberError || !memberData) {
+    if (memberError) {
+      setError(memberError.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!memberData) {
       setError("Member record not found.");
       setLoading(false);
       return;
     }
 
     if (memberData.must_change_password) {
-      window.location.href = "/change-password";
-    } else {
-      window.location.href = "/member";
+      router.replace("/change-password");
+      return;
     }
+
+    router.replace("/member");
   }
 
   return (
@@ -109,27 +137,33 @@ export default function LoginPage() {
                   Email address
                 </label>
                 <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
-                  placeholder="Enter your email"
-                />
+  id="email"
+  name="email"
+  type="email"
+  autoComplete="email"
+  required
+  value={email}
+  onChange={(event) => setEmail(event.target.value)}
+  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
+  placeholder="Enter your email"
+/>
               </div>
 
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-700">
                   Password
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
-                  placeholder="Enter your password"
-                />
+             <input
+  id="password"
+  name="password"
+  type="password"
+  autoComplete="current-password"
+  required
+  value={password}
+  onChange={(event) => setPassword(event.target.value)}
+  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
+  placeholder="Enter your password"
+/>
               </div>
 
               {error && (
