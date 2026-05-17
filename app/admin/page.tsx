@@ -31,21 +31,26 @@ type Payment = {
 type MemberRecord = {
   id: string;
   full_name: string;
-  email: string;
-  phone: string | null;
-  member_number: string | null;
-  membership_status: string;
-  total_shares: number;
-  portfolio_value: number;
-  declared_dividends: number;
-  created_at: string;
-  date_of_birth: string | null;
-gender: string | null;
-city: string | null;
-national_id_number: string | null;
-occupation: string | null;
-business_name: string | null;
-business_sector: string | null;
+  email?: string | null;
+  phone?: string | null;
+  city?: string | null;
+  gender?: string | null;
+  occupation?: string | null;
+  business_name?: string | null;
+  business_sector?: string | null;
+  created_at?: string | null;
+  member_number?: string | null;
+  membership_status?: string | null;
+  total_shares?: number | null;
+  portfolio_value?: number | null;
+  declared_dividends?: number | null;
+
+share_certificate?: {
+  id: string;
+  certificate_name: string;
+  certificate_path: string;
+  created_at?: string | null;
+}[] | null;
 };
 
 type BusinessApplication = {
@@ -116,7 +121,13 @@ export default function AdminDashboard() {
   const [memberMessage, setMemberMessage] = useState("");
   const [creatingMember, setCreatingMember] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberRecord | null>(null);
+  const [uploadingCertificateFor, setUploadingCertificateFor] = useState("");
   const [savingMember, setSavingMember] = useState(false);
+
+  const [toast, setToast] = useState<{
+  type: "success" | "error";
+  message: string;
+} | null>(null);
 
   const filteredApplications = useMemo(() => {
     const search = applicationSearch.toLowerCase();
@@ -213,20 +224,77 @@ async function handleLogout() {
 
   const { data, error } = await supabase
     .from("members")
-    .select(
-      "id, full_name, email, phone, date_of_birth, gender, city, national_id_number, occupation, business_name, business_sector, member_number, membership_status, total_shares, portfolio_value, declared_dividends, created_at"
-    )
+    .select(`
+      id,
+      full_name,
+      email,
+      phone,
+      date_of_birth,
+      gender,
+      city,
+      national_id_number,
+      occupation,
+      business_name,
+      business_sector,
+      member_number,
+      membership_status,
+      total_shares,
+      portfolio_value,
+      declared_dividends,
+      created_at,
+      share_certificate:share_certificates(
+        id,
+        certificate_name,
+        certificate_path,
+        created_at
+      )
+    `)
     .order("created_at", { ascending: false });
 
-  if (error) console.error(error);
+  if (error) {
+    console.error(error);
+    setMembers([]);
+    setLoadingMembers(false);
+    return;
+  }
 
   setMembers((data as MemberRecord[]) || []);
   setLoadingMembers(false);
 }
+function showToast(type: "success" | "error", message: string) {
+  setToast({ type, message });
+
+  setTimeout(() => {
+    setToast(null);
+  }, 4000);
+}
+
 async function activateMember(memberId: string) {
+  const memberToActivate = members.find((member) => member.id === memberId);
+
+  if (!memberToActivate) return;
+
+  let assignedMemberNumber = memberToActivate.member_number;
+
+  if (!assignedMemberNumber) {
+    const existingNumbers = members
+      .map((member) => member.member_number)
+      .filter(Boolean)
+      .map((number) => Number(String(number).replace("CAPD-", "")))
+      .filter((number) => !Number.isNaN(number));
+
+    const nextNumber =
+      existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 215;
+
+    assignedMemberNumber = `CAPD-${String(nextNumber).padStart(5, "0")}`;
+  }
+
   const { error } = await supabase
     .from("members")
-    .update({ membership_status: "active" })
+    .update({
+      membership_status: "active",
+      member_number: assignedMemberNumber,
+    })
     .eq("id", memberId);
 
   if (error) {
@@ -237,7 +305,11 @@ async function activateMember(memberId: string) {
   setMembers((current) =>
     current.map((member) =>
       member.id === memberId
-        ? { ...member, membership_status: "active" }
+        ? {
+            ...member,
+            membership_status: "active",
+            member_number: assignedMemberNumber,
+          }
         : member
     )
   );
@@ -256,35 +328,23 @@ async function openPaymentReceipt(receiptPath: string) {
 }
 
   async function loadApplications() {
-    setLoadingApplications(true);
+  setLoadingApplications(true);
 
-    const { data, error } = await supabase
-      .from("business_applications")
-      .select(
-        `
-        id,
-        business_name,
-        full_name,
-        phone,
-        business_type,
-        requested_amount,
-        daily_revenue_estimate,
-        intended_use,
-        guarantor_name,
-        guarantor_phone,
-        assigned_officer,
-        review_notes,
-        application_status,
-        created_at
-      `
-      )
-      .order("created_at", { ascending: false });
+  const { data, error } = await supabase
+    .from("business_applications")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    if (error) console.error(error);
-
-    setApplications((data as BusinessApplication[]) || []);
+  if (error) {
+    console.error(error);
+    setApplications([]);
     setLoadingApplications(false);
+    return;
   }
+
+  setApplications((data as BusinessApplication[]) || []);
+  setLoadingApplications(false);
+}
 
   async function approvePayment(paymentId: string) {
     setApprovingId(paymentId);
@@ -363,10 +423,112 @@ async function openPaymentReceipt(receiptPath: string) {
           : payment
       )
     );
-
+setMembers((current) =>
+  current.map((member) =>
+    member.id === paymentRecord.member_id
+      ? {
+          ...member,
+          total_shares: updatedShares,
+          portfolio_value: updatedPortfolioValue,
+        }
+      : member
+  )
+);
     setApprovingId("");
   }
+async function uploadShareCertificate(member: any, file: File | null) {
+  console.log("START uploadShareCertificate", { member, file });
 
+  if (!member?.id) {
+    alert("Member not found.");
+    return;
+  }
+
+  if (!file) {
+    alert("No file selected.");
+    return;
+  }
+
+  setUploadingCertificateFor(member.id);
+
+  try {
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filePath = `${member.id}/${Date.now()}-${safeFileName}`;
+
+    console.log("Uploading to storage:", filePath);
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("share-certificates")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+      });
+
+    console.log("Storage upload result:", uploadData, uploadError);
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    console.log("Saving to database...");
+
+    const { data: certificateData, error: certificateDbError } = await supabase
+      .from("share_certificates")
+      .insert({
+        member_id: member.id,
+        certificate_name: safeFileName,
+        certificate_path: filePath,
+        uploaded_by: member.id,
+      })
+      .select();
+
+    console.log("Database result:", certificateData, certificateDbError);
+
+    if (certificateDbError) {
+      throw certificateDbError;
+    }
+
+showToast("success", "Share certificate uploaded successfully.");
+    window.location.reload();
+  } catch (error: any) {
+    console.error("Certificate upload failed:", error);
+    alert(error.message || "Certificate upload failed.");
+  } finally {
+    setUploadingCertificateFor("");
+  }
+}
+async function deleteShareCertificate(certificateId: string, certificatePath: string) {
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this certificate?"
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const { error: storageError } = await supabase.storage
+      .from("share-certificates")
+      .remove([certificatePath]);
+
+    if (storageError) {
+      console.error(storageError);
+    }
+
+    const { error: dbError } = await supabase
+      .from("share_certificates")
+      .delete()
+      .eq("id", certificateId);
+
+    if (dbError) {
+      throw dbError;
+    }
+
+    showToast("success", "Certificate deleted successfully.");
+    window.location.reload();
+  } catch (error: any) {
+    console.error(error);
+    showToast("error", error.message || "Failed to delete certificate.");
+  }
+}
   async function createMember() {
     if (!newMemberName || !newMemberEmail || !newMemberNumber) {
       setMemberMessage("Please enter full name, email, and member number.");
@@ -555,18 +717,28 @@ async function openPaymentReceipt(receiptPath: string) {
     );
   }
 
-  return (
-    <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <BrandLogo />
-            <div className="hidden border-l border-slate-200 pl-4 text-sm font-bold text-slate-500 md:block">
-              Admin Control Centre
-            </div>
-          </div>
+ return (
+  <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    {toast && (
+      <div
+        className={`fixed right-6 top-6 z-50 rounded-2xl px-5 py-4 text-sm font-bold text-white shadow-xl ${
+          toast.type === "success" ? "bg-green-700" : "bg-red-600"
+        }`}
+      >
+        {toast.message}
+      </div>
+    )}
 
-          <div className="flex gap-3">
+    <header className="border-b bg-white">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <div className="flex items-center gap-3">
+          <BrandLogo />
+          <div className="hidden border-l border-slate-200 pl-4 text-sm font-bold text-slate-500 md:block">
+            Admin Control Centre
+          </div>
+        </div>
+
+        <div className="flex gap-3">
   <Button
     className="px-5 py-3"
     variant="outline"
@@ -919,7 +1091,7 @@ async function openPaymentReceipt(receiptPath: string) {
                   />
 
                   <input
-                    value={editingMember.email}
+                    value={editingMember.email || ""}
                     onChange={(event) =>
                       setEditingMember({
                         ...editingMember,
@@ -943,7 +1115,7 @@ async function openPaymentReceipt(receiptPath: string) {
                   />
 
                   <input
-                    value={editingMember.total_shares}
+                    value={editingMember.total_shares ?? ""}
                     onChange={(event) =>
                       setEditingMember({
                         ...editingMember,
@@ -955,7 +1127,7 @@ async function openPaymentReceipt(receiptPath: string) {
                   />
 
                   <input
-                    value={editingMember.declared_dividends}
+                    value={editingMember.declared_dividends ?? ""}
                     onChange={(event) =>
                       setEditingMember({
                         ...editingMember,
@@ -967,7 +1139,7 @@ async function openPaymentReceipt(receiptPath: string) {
                   />
 
                   <select
-                    value={editingMember.membership_status}
+                    value={editingMember.membership_status || ""}
                     onChange={(event) =>
                       setEditingMember({
                         ...editingMember,
@@ -1028,6 +1200,9 @@ async function openPaymentReceipt(receiptPath: string) {
                       <th className="py-4">Dividends</th>
                       <th className="py-4">Status</th>
                       <th className="py-4">Action</th>
+                      <th className="py-4">Cert
+
+                      </th>
                     </tr>
                   </thead>
 
@@ -1084,6 +1259,43 @@ async function openPaymentReceipt(receiptPath: string) {
                             Edit
                           </Button>
                         </td>
+<td className="px-4 py-3">
+  <div className="flex flex-col gap-2">
+    <label className="inline-block cursor-pointer rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800">
+      {uploadingCertificateFor === member.id ? "Uploading..." : "Upload / Replace"}
+
+      <input
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        disabled={uploadingCertificateFor === member.id}
+        onChange={(e) => {
+          const file = e.target.files?.[0] || null;
+          if (!file) return;
+
+          uploadShareCertificate(member, file);
+        }}
+        className="hidden"
+      />
+    </label>
+
+{Array.isArray(member.share_certificate) && member.share_certificate.length > 0 ? (
+  <button
+    onClick={() => {
+    const certificate = member.share_certificate?.[0];
+      if (!certificate) return;
+
+      deleteShareCertificate(
+        certificate.id,
+        certificate.certificate_path
+      );
+    }}
+    className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+  >
+    Delete Certificate
+  </button>
+) : null}
+  </div>
+</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1170,7 +1382,7 @@ async function openPaymentReceipt(receiptPath: string) {
                   </td>
 
                   <td className="py-4 text-slate-600">
-                    {new Date(member.created_at).toLocaleDateString()}
+                  {member.created_at ? new Date(member.created_at).toLocaleDateString() : "-"}
                   </td>
                   <td className="py-4">
   <Button

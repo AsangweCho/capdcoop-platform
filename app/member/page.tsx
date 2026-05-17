@@ -24,6 +24,12 @@ type Member = {
   portfolio_value: number;
   declared_dividends: number;
 };
+type ShareCertificate = {
+  id: string;
+  certificate_name: string;
+  certificate_path: string;
+  created_at: string;
+};
 
 type MemberPayment = {
   id: string;
@@ -59,6 +65,7 @@ export default function MemberPortal() {
   FundingApplication[]
 >([]);
 const [loadingApplications, setLoadingApplications] = useState(true);
+const [shareCertificates, setShareCertificates] = useState<ShareCertificate[]>([]);
 
   useEffect(() => {
     async function loadMember() {
@@ -96,6 +103,17 @@ const [loadingApplications, setLoadingApplications] = useState(true);
   if (paymentError) {
     console.error(paymentError);
   }
+  const { data: certificateData, error: certificateError } = await supabase
+  .from("share_certificates")
+  .select("id, certificate_name, certificate_path, created_at")
+  .eq("member_id", data.id)
+  .order("created_at", { ascending: false });
+
+if (certificateError) {
+  console.error(certificateError);
+}
+
+setShareCertificates(certificateData || []);
 
   setMemberPayments(paymentData || []);
   await loadFundingApplications(data.id);
@@ -137,7 +155,24 @@ async function loadFundingApplications(memberId: string) {
   setFundingApplications(applicationData || []);
   setLoadingApplications(false);
 }
+async function openShareCertificate(
+  certificatePath: string,
+  certificateName: string
+) {
+  const { data, error } = await supabase.storage
+    .from("share-certificates")
+    .createSignedUrl(certificatePath, 300, {
+      download: certificateName || "share-certificate",
+    });
 
+  if (error || !data?.signedUrl) {
+    console.error(error);
+    alert("Could not generate certificate download link.");
+    return;
+  }
+
+  window.open(data.signedUrl, "_blank");
+}
   async function handleLogout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -229,6 +264,45 @@ if (!member) {
         >
           Return to Login
         </button>
+      </div>
+    </main>
+  );
+}
+if (member.membership_status === "pending") {
+  return (
+    <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <div className="max-w-xl rounded-[2rem] bg-white p-10 text-center shadow-xl">
+          <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-green)]">
+            Membership Under Review
+          </p>
+
+          <h1 className="mt-4 text-3xl font-black text-[var(--capd-navy)]">
+            Your CAPDCOOP membership is pending activation.
+          </h1>
+
+          <p className="mt-4 leading-7 text-slate-600">
+            Thank you for registering with CAPDCOOP. Our membership team is
+            reviewing your account and will contact you shortly for subscription
+            and activation.
+          </p>
+
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Link
+              href="/contact"
+              className="rounded-2xl bg-[var(--capd-navy)] px-6 py-3 font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+            >
+              Contact Us
+            </Link>
+
+            <button
+              onClick={handleLogout}
+              className="rounded-2xl border border-slate-300 bg-white px-6 py-3 font-bold text-[var(--capd-navy)] transition-all duration-300 hover:border-[var(--capd-green)] hover:text-[var(--capd-green)]"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   );
@@ -333,7 +407,70 @@ const metrics = [
             </Card>
           ))}
         </div>
+<Card className="mt-8 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <h2 className="text-2xl font-black text-[var(--capd-navy)]">
+      My Share Certificates
+    </h2>
 
+    <p className="mt-2 text-sm text-slate-600">
+      View and download your official CAPDCOOP share certificates.
+    </p>
+
+    {shareCertificates.length === 0 ? (
+      <p className="mt-6 font-semibold text-slate-600">
+        No share certificates have been uploaded yet.
+      </p>
+    ) : (
+      <div className="mt-6 overflow-x-auto">
+        <table className="w-full min-w-[650px] text-left text-sm">
+          <thead>
+            <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+              <th className="py-4">Certificate</th>
+              <th className="py-4">Date Uploaded</th>
+              <th className="py-4">Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+  {shareCertificates.map((certificate) => (
+    <tr key={certificate.id} className="border-b">
+  <td className="py-4 font-bold text-[var(--capd-navy)]">
+    <div className="flex items-center gap-2">
+      <span>
+        {certificate.certificate_name?.toLowerCase().endsWith(".pdf")
+          ? "📄"
+          : "🖼️"}
+      </span>
+      <span>{certificate.certificate_name}</span>
+    </div>
+  </td>
+
+  <td className="py-4 text-slate-600">
+    {new Date(certificate.created_at).toLocaleDateString()}
+  </td>
+
+  <td className="py-4">
+    <button
+      onClick={() =>
+        openShareCertificate(
+          certificate.certificate_path,
+          certificate.certificate_name
+        )
+      }
+      className="inline-block rounded-2xl bg-[var(--capd-navy)] px-5 py-2 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
+    >
+      Download Share Certificate
+    </button>
+  </td>
+</tr>
+  ))}
+</tbody>
+        </table>
+      </div>
+    )}
+  </CardContent>
+</Card>
        <Card className="mt-8 border-slate-200 bg-white shadow-sm">
 <CardContent className="p-8">
 <h2 className="text-2xl font-black text-[var(--capd-navy)]">
