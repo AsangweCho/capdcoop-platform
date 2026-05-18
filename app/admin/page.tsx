@@ -159,12 +159,14 @@ const canManageNotices =
 const canManageCertificates =
   currentAdmin?.role === "super_admin" ||
   currentAdmin?.role === "admin" ||
-  currentAdmin?.role === "certificate_officer";
+  currentAdmin?.role === "certificate_officer" ||
+  currentAdmin?.role === "membership_certificate_officer";
 
 const canManageMembers =
   currentAdmin?.role === "super_admin" ||
   currentAdmin?.role === "admin" ||
-  currentAdmin?.role === "membership_officer";
+  currentAdmin?.role === "membership_officer" ||
+  currentAdmin?.role === "membership_certificate_officer";
 
 const canManagePayments =
   currentAdmin?.role === "super_admin" ||
@@ -968,22 +970,37 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
       <option value="membership_officer">Membership Officer</option>
       <option value="certificate_officer">Certificate Officer</option>
       <option value="viewer">Viewer</option>
+      <option value="membership_certificate_officer">
+  Membership + Certificate Officer
+</option>
     </select>
 
-    <Button
-      onClick={() =>
-        updateAdminUser(admin.id, {
-          is_active: !admin.is_active,
-        })
-      }
-      className={
-        admin.is_active
-          ? "bg-red-600 hover:bg-red-700"
-          : "bg-green-700 hover:bg-green-800"
-      }
-    >
-      {admin.is_active ? "Deactivate" : "Activate"}
-    </Button>
+<Button
+  disabled={
+    admin.role === "super_admin" &&
+    admin.email === currentAdmin?.email
+  }
+  onClick={() =>
+    updateAdminUser(admin.id, {
+      is_active: !admin.is_active,
+    })
+  }
+  className={
+    admin.role === "super_admin" &&
+    admin.email === currentAdmin?.email
+      ? "bg-slate-300 text-slate-600 cursor-not-allowed"
+      : admin.is_active
+      ? "bg-red-600 hover:bg-red-700"
+      : "bg-green-700 hover:bg-green-800"
+  }
+>
+  {admin.role === "super_admin" &&
+  admin.email === currentAdmin?.email
+    ? "Protected"
+    : admin.is_active
+    ? "Deactivate"
+    : "Activate"}
+</Button>
   </div>
 </td>
                 </tr>
