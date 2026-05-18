@@ -87,6 +87,18 @@ type AdminUser = {
   is_active: boolean;
   created_at: string | null;
 };
+type AuditLog = {
+  id: string;
+  actor_email: string | null;
+  actor_role: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  old_value: any;
+  new_value: any;
+  metadata: any;
+  created_at: string | null;
+};
 
 const stats = [
   { title: "Registered Members", value: "members", icon: Users },
@@ -133,9 +145,11 @@ export default function AdminDashboard() {
   const [uploadingCertificateFor, setUploadingCertificateFor] = useState("");
   const [savingMember, setSavingMember] = useState(false);
 
- 
+ const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
 const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
+
 
   const [toast, setToast] = useState<{
   type: "success" | "error";
@@ -330,6 +344,29 @@ function showToast(type: "success" | "error", message: string) {
     setToast(null);
   }, 4000);
 }
+async function loadAuditLogs() {
+  if (!canManageAdmins) return;
+
+  setLoadingAuditLogs(true);
+
+  const { data, error } = await supabase
+    .from("audit_logs")
+    .select(
+      "id, actor_email, actor_role, action, entity_type, entity_id, old_value, new_value, metadata, created_at"
+    )
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error(error);
+    showToast("error", "Failed to load audit logs.");
+    setLoadingAuditLogs(false);
+    return;
+  }
+
+  setAuditLogs((data as AuditLog[]) || []);
+  setLoadingAuditLogs(false);
+}
 async function loadAdminUsers() {
   if (!canManageAdmins) return;
 
@@ -427,7 +464,40 @@ async function openPaymentReceipt(receiptPath: string) {
   setApplications((data as BusinessApplication[]) || []);
   setLoadingApplications(false);
 }
+async function logAudit({
+  action,
+  entityType,
+  entityId,
+  oldValue = null,
+  newValue = null,
+  metadata = null,
+}: {
+  action: string;
+  entityType: string;
+  entityId?: string;
+  oldValue?: Record<string, any> | null;
+  newValue?: Record<string, any> | null;
+  metadata?: Record<string, any> | null;
+}) {
+  if (!currentAdmin) return;
 
+  const { error } = await supabase.from("audit_logs").insert({
+    actor_admin_id: currentAdmin.id,
+    actor_auth_user_id: currentAdmin.auth_user_id,
+    actor_email: currentAdmin.email,
+    actor_role: currentAdmin.role,
+    action,
+    entity_type: entityType,
+    entity_id: entityId || null,
+    old_value: oldValue,
+    new_value: newValue,
+    metadata,
+  });
+
+  if (error) {
+    console.error("Audit log failed:", error);
+  }
+}
   async function approvePayment(paymentId: string) {
     setApprovingId(paymentId);
 
@@ -497,7 +567,22 @@ async function openPaymentReceipt(receiptPath: string) {
       setApprovingId("");
       return;
     }
-
+await logAudit({
+  action: "payment_approved",
+  entityType: "payment",
+  entityId: paymentId,
+  oldValue: {
+    payment_status: "pending",
+  },
+  newValue: {
+    payment_status: "approved",
+    shares_added: sharesToAdd,
+    amount: paymentRecord.amount,
+  },
+  metadata: {
+    member_id: paymentRecord.member_id,
+  },
+});
     setPayments((current) =>
       current.map((payment) =>
         payment.id === paymentId
@@ -570,8 +655,21 @@ async function uploadShareCertificate(member: any, file: File | null) {
       throw certificateDbError;
     }
 
+await logAudit({
+  action: "certificate_uploaded",
+  entityType: "share_certificate",
+  newValue: {
+    member_id: member.id,
+    certificate_name: safeFileName,
+    certificate_path: filePath,
+  },
+  metadata: {
+    member_name: member.full_name,
+  },
+});
+
 showToast("success", "Share certificate uploaded successfully.");
-    window.location.reload();
+window.location.reload();
   } catch (error: any) {
     console.error("Certificate upload failed:", error);
     alert(error.message || "Certificate upload failed.");
@@ -587,6 +685,15 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
   if (!confirmed) return;
 
   try {
+    await logAudit({
+      action: "certificate_deleted",
+      entityType: "share_certificate",
+      entityId: certificateId,
+      oldValue: {
+        certificate_path: certificatePath,
+      },
+    });
+
     const { error: storageError } = await supabase.storage
       .from("share-certificates")
       .remove([certificatePath]);
@@ -611,14 +718,20 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
     showToast("error", error.message || "Failed to delete certificate.");
   }
 }
-
  async function updateAdminUser(
   adminId: string,
   updates: { role?: string; is_active?: boolean }
 ) {
+  const existingAdmin = adminUsers.find((admin) => admin.id === adminId);
+
+  if (!existingAdmin) {
+    showToast("error", "Admin record not found.");
+    return;
+  }
+
   const { error } = await supabase
     .from("admin_users")
-    .update (updates)
+    .update(updates)
     .eq("id", adminId);
 
   if (error) {
@@ -627,8 +740,29 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
     return;
   }
 
+  await logAudit({
+    action: "admin_updated",
+    entityType: "admin_user",
+    entityId: adminId,
+    oldValue: {
+      role: existingAdmin.role,
+      is_active: existingAdmin.is_active,
+    },
+    newValue: {
+      role: updates.role ?? existingAdmin.role,
+      is_active:
+        updates.is_active !== undefined
+          ? updates.is_active
+          : existingAdmin.is_active,
+    },
+    metadata: {
+      target_email: existingAdmin.email,
+    },
+  });
+
   showToast("success", "Admin updated successfully.");
   loadAdminUsers();
+  loadAuditLogs();
 }
   async function createMember() {
     if (!newMemberName || !newMemberEmail || !newMemberNumber) {
@@ -685,43 +819,74 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
   }
 
   async function saveMemberChanges() {
-    if (!editingMember) return;
+  if (!editingMember) return;
 
-    setSavingMember(true);
+  setSavingMember(true);
 
-    const recalculatedPortfolio = Number(editingMember.total_shares || 0) * 10000;
+  const existingMember = members.find(
+    (member) => member.id === editingMember.id
+  );
 
-    const { error } = await supabase
-      .from("members")
-      .update({
-        full_name: editingMember.full_name,
-        email: editingMember.email,
-        phone: editingMember.phone,
-        membership_status: editingMember.membership_status,
-        total_shares: Number(editingMember.total_shares),
-        declared_dividends: Number(editingMember.declared_dividends),
-        portfolio_value: recalculatedPortfolio,
-      })
-      .eq("id", editingMember.id);
+  const recalculatedPortfolio =
+    Number(editingMember.total_shares || 0) * 10000;
 
-    if (error) {
-      setMemberMessage(error.message);
-      setSavingMember(false);
-      return;
-    }
+  const { error } = await supabase
+    .from("members")
+    .update({
+      full_name: editingMember.full_name,
+      email: editingMember.email,
+      phone: editingMember.phone,
+      membership_status: editingMember.membership_status,
+      total_shares: Number(editingMember.total_shares),
+      declared_dividends: Number(editingMember.declared_dividends),
+      portfolio_value: recalculatedPortfolio,
+    })
+    .eq("id", editingMember.id);
 
-    setMembers((current) =>
-      current.map((member) =>
-        member.id === editingMember.id
-          ? { ...editingMember, portfolio_value: recalculatedPortfolio }
-          : member
-      )
-    );
-
-    setMemberMessage("Member updated successfully.");
-    setEditingMember(null);
+  if (error) {
+    setMemberMessage(error.message);
     setSavingMember(false);
+    return;
   }
+
+  await logAudit({
+    action: "member_updated",
+    entityType: "member",
+    entityId: editingMember.id,
+    oldValue: existingMember
+      ? {
+          full_name: existingMember.full_name,
+          email: existingMember.email,
+          phone: existingMember.phone,
+          membership_status: existingMember.membership_status,
+          total_shares: existingMember.total_shares,
+          declared_dividends: existingMember.declared_dividends,
+          portfolio_value: existingMember.portfolio_value,
+        }
+      : null,
+    newValue: {
+      full_name: editingMember.full_name,
+      email: editingMember.email,
+      phone: editingMember.phone,
+      membership_status: editingMember.membership_status,
+      total_shares: Number(editingMember.total_shares),
+      declared_dividends: Number(editingMember.declared_dividends),
+      portfolio_value: recalculatedPortfolio,
+    },
+  });
+
+  setMembers((current) =>
+    current.map((member) =>
+      member.id === editingMember.id
+        ? { ...editingMember, portfolio_value: recalculatedPortfolio }
+        : member
+    )
+  );
+
+  setMemberMessage("Member updated successfully.");
+  setEditingMember(null);
+  setSavingMember(false);
+}
 
   async function startEditApplication(application: BusinessApplication) {
     setEditingApplication(application);
@@ -1003,6 +1168,91 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
 </Button>
   </div>
 </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </CardContent>
+  </Card>
+)}
+{canManageAdmins && (
+  <Card className="mt-8 border-slate-200 bg-white shadow-sm">
+    <CardContent className="p-8">
+      <div>
+        <h2 className="text-2xl font-black text-[#0D2D6E]">
+          Audit Logs
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Track sensitive admin actions across payments, members, certificates, and role changes.
+        </p>
+      </div>
+
+      <div className="mt-6 overflow-x-auto">
+        {loadingAuditLogs ? (
+          <p className="text-sm font-semibold text-slate-500">
+            Loading audit logs...
+          </p>
+        ) : auditLogs.length === 0 ? (
+          <p className="text-sm font-semibold text-slate-500">
+            No audit logs found.
+          </p>
+        ) : (
+          <table className="w-full min-w-[900px] text-left text-sm">
+            <thead>
+              <tr className="border-b text-xs uppercase text-slate-500">
+                <th className="py-3">Date</th>
+                <th className="py-3">Actor</th>
+                <th className="py-3">Role</th>
+                <th className="py-3">Action</th>
+                <th className="py-3">Entity</th>
+                <th className="py-3">Details</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {auditLogs.map((log) => (
+                <tr key={log.id} className="border-b align-top">
+                  <td className="py-4 text-slate-600">
+                    {log.created_at
+                      ? new Date(log.created_at).toLocaleString()
+                      : "-"}
+                  </td>
+
+                  <td className="py-4 font-semibold text-[#0D2D6E]">
+                    {log.actor_email || "-"}
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+                    {log.actor_role
+                      ? log.actor_role.replace("_", " ").toUpperCase()
+                      : "-"}
+                  </td>
+
+                  <td className="py-4">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                      {log.action.replaceAll("_", " ").toUpperCase()}
+                    </span>
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+                    {log.entity_type}
+                  </td>
+
+                  <td className="py-4 text-xs text-slate-600">
+                    <pre className="max-h-32 max-w-md overflow-auto rounded-xl bg-slate-50 p-3">
+                      {JSON.stringify(
+                        {
+                          old: log.old_value,
+                          new: log.new_value,
+                          metadata: log.metadata,
+                        },
+                        null,
+                        2
+                      )}
+                    </pre>
+                  </td>
                 </tr>
               ))}
             </tbody>
