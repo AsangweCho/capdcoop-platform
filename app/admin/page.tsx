@@ -99,6 +99,44 @@ type AuditLog = {
   metadata: any;
   created_at: string | null;
 };
+type Loan = {
+  id: string;
+  member_id: string | null;
+  business_name: string | null;
+  loan_amount: number;
+  interest_rate: number;
+  insurance_rate: number;
+  insurance_fee: number;
+  registration_fee: number;
+  duration_days: number;
+  daily_payment_amount: number;
+  total_expected_repayment: number;
+  purpose: string | null;
+  status: string;
+  start_date: string | null;
+  end_date: string | null;
+  assigned_officer: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type LoanRepayment = {
+  id: string;
+  loan_id: string;
+  member_id: string | null;
+  due_date: string;
+  expected_amount: number;
+  paid_amount: number;
+  balance_remaining: number;
+  payment_status: string;
+  payment_method: string | null;
+  reference: string | null;
+  collected_by: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
 
 const stats = [
   { title: "Registered Members", value: "members", icon: Users },
@@ -111,6 +149,10 @@ export default function AdminDashboard() {
   const router = useRouter();
   const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [adminError, setAdminError] = useState("");
+
+  const [repaymentFilter, setRepaymentFilter] = useState<
+  "all" | "due_today" | "overdue" | "pending" | "partial" | "paid" | "missed"
+>("all");
 
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
@@ -150,6 +192,23 @@ const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
 const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
 
+const [loans, setLoans] = useState<Loan[]>([]);
+const [loadingLoans, setLoadingLoans] = useState(false);
+
+const [creatingLoan, setCreatingLoan] = useState(false);
+const [newLoan, setNewLoan] = useState<Partial<Loan>>({
+  member_id: "",
+  business_name: "",
+  loan_amount: 0,
+  interest_rate: 3,
+  insurance_rate: 2.5,
+  registration_fee: 5000,
+  duration_days: 30,
+  purpose: "",
+  status: "draft",
+});
+const [loanRepayments, setLoanRepayments] = useState<LoanRepayment[]>([]);
+const [loadingLoanRepayments, setLoadingLoanRepayments] = useState(false);
 
   const [toast, setToast] = useState<{
   type: "success" | "error";
@@ -163,6 +222,27 @@ const [currentAdmin, setCurrentAdmin] = useState<{
   role: string;
   is_active: boolean;
 } | null>(null);
+const [repaymentInputs, setRepaymentInputs] = useState<
+  Record<
+    string,
+    {
+      paid_amount: string;
+      payment_method: string;
+      reference: string;
+      notes: string;
+    }
+  >
+>({});
+
+function calculateLoanTotals(loan: Partial<Loan>) {
+  const amount = Number(loan.loan_amount || 0);
+  const insurance = (amount * (loan.insurance_rate || 2.5)) / 100;
+  const totalRepayment = amount + insurance + (loan.registration_fee || 5000);
+  const dailyPayment =
+    totalRepayment / (loan.duration_days || 30);
+
+  return { insurance, totalRepayment, dailyPayment };
+}
 
 const canManageAdmins = currentAdmin?.role === "super_admin";
 
@@ -248,7 +328,7 @@ const filteredApplications = useMemo(() => {
   useEffect(() => {
     if (checkingAdmin || adminError) return;
 
-   loadPayments();
+loadPayments();
 loadMembers();
 loadApplications();
 loadAdminUsers();
@@ -294,6 +374,84 @@ const canViewDashboard =
 async function handleLogout() {
   await supabase.auth.signOut();
   window.location.href = "/login";
+}
+
+async function createLoan() {
+  if (!newLoan.member_id || !newLoan.loan_amount) {
+    showToast("error", "Member and loan amount are required.");
+    return;
+  }
+
+  setCreatingLoan(true);
+  const { insurance, totalRepayment, dailyPayment } = calculateLoanTotals(newLoan);
+
+  try {
+    const { data, error } = await supabase
+      .from("loans")
+      .insert([{
+        member_id: newLoan.member_id,
+        business_name: newLoan.business_name,
+        loan_amount: newLoan.loan_amount,
+        interest_rate: newLoan.interest_rate,
+        insurance_rate: newLoan.insurance_rate,
+        insurance_fee: insurance,
+        registration_fee: newLoan.registration_fee,
+        duration_days: newLoan.duration_days,
+        daily_payment_amount: dailyPayment,
+        total_expected_repayment: totalRepayment,
+        purpose: newLoan.purpose,
+        status: newLoan.status,
+        assigned_officer: currentAdmin?.full_name || null,
+        created_by: currentAdmin?.id || null,
+      }])
+      .select();
+
+    if (error) throw error;
+
+    await logAudit({
+      action: "loan_created",
+      entityType: "loan",
+      entityId: data?.[0]?.id,
+      newValue: data?.[0],
+    });
+
+    showToast("success", "Loan created successfully.");
+    loadLoans();
+    setNewLoan({
+      member_id: "",
+      business_name: "",
+      loan_amount: 0,
+      interest_rate: 3,
+      insurance_rate: 2.5,
+      registration_fee: 5000,
+      duration_days: 30,
+      purpose: "",
+      status: "draft",
+    });
+  } catch (err: any) {
+    console.error(err);
+    showToast("error", err.message || "Failed to create loan.");
+  } finally {
+    setCreatingLoan(false);
+  }
+}
+async function loadLoans() {
+  setLoadingLoans(true);
+
+  const { data, error } = await supabase
+    .from("loans")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    showToast("error", "Failed to load loans.");
+    setLoadingLoans(false);
+    return;
+  }
+
+  setLoans((data as Loan[]) || []);
+  setLoadingLoans(false);
 }
  async function loadMembers() {
   setLoadingMembers(true);
@@ -366,6 +524,24 @@ async function loadAuditLogs() {
 
   setAuditLogs((data as AuditLog[]) || []);
   setLoadingAuditLogs(false);
+}
+async function loadLoanRepayments() {
+  setLoadingLoanRepayments(true);
+
+  const { data, error } = await supabase
+    .from("loan_repayments")
+    .select("*")
+    .order("due_date", { ascending: true });
+
+  if (error) {
+    console.error(error);
+    showToast("error", "Failed to load loan repayments.");
+    setLoadingLoanRepayments(false);
+    return;
+  }
+
+  setLoanRepayments((data as LoanRepayment[]) || []);
+  setLoadingLoanRepayments(false);
 }
 async function loadAdminUsers() {
   if (!canManageAdmins) return;
@@ -603,6 +779,76 @@ setMembers((current) =>
 );
     setApprovingId("");
   }
+  async function updateRepayment(
+  repaymentId: string,
+  updates: {
+    payment_status?: string;
+    paid_amount?: number;
+    payment_method?: string;
+    reference?: string;
+    notes?: string;
+  }
+) {
+  if (!canManagePayments) {
+    showToast("error", "No permission.");
+    return;
+  }
+
+  const repayment = loanRepayments.find((r) => r.id === repaymentId);
+
+  if (!repayment) {
+    showToast("error", "Repayment record not found.");
+    return;
+  }
+
+  const paidAmount =
+    updates.paid_amount !== undefined
+      ? Number(updates.paid_amount)
+      : Number(repayment.paid_amount || 0);
+
+  const expectedAmount = Number(repayment.expected_amount || 0);
+  const balanceRemaining = Math.max(expectedAmount - paidAmount, 0);
+
+  const calculatedStatus =
+    updates.payment_status ||
+    (paidAmount >= expectedAmount
+      ? "paid"
+      : paidAmount > 0
+      ? "partial"
+      : "missed");
+
+  const payload = {
+    payment_status: calculatedStatus,
+    paid_amount: paidAmount,
+    balance_remaining: balanceRemaining,
+    payment_method: updates.payment_method || repayment.payment_method,
+    reference: updates.reference || repayment.reference,
+    notes: updates.notes || repayment.notes,
+    collected_by: currentAdmin?.id || null,
+  };
+
+  const { error } = await supabase
+    .from("loan_repayments")
+    .update(payload)
+    .eq("id", repaymentId);
+
+  if (error) {
+    console.error(error);
+    showToast("error", "Failed to update repayment.");
+    return;
+  }
+
+  await logAudit({
+    action: "repayment_updated",
+    entityType: "loan_repayment",
+    entityId: repaymentId,
+    oldValue: repayment,
+    newValue: payload,
+  });
+
+  showToast("success", "Repayment updated.");
+  loadLoanRepayments();
+}
 async function uploadShareCertificate(member: any, file: File | null) {
   console.log("START uploadShareCertificate", { member, file });
 
@@ -761,8 +1007,15 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
   });
 
   showToast("success", "Admin updated successfully.");
-  loadAdminUsers();
-  loadAuditLogs();
+
+loadPayments();
+loadMembers();
+loadApplications();
+loadAdminUsers();
+loadAuditLogs();;
+loadLoans();
+loadLoanRepayments();
+
 }
   async function createMember() {
     if (!newMemberName || !newMemberEmail || !newMemberNumber) {
@@ -933,7 +1186,83 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
     setEditingApplication(null);
     setSavingApplication(false);
   }
+async function activateLoan(loan: Loan) {
+  if (!canManagePayments) {
+    showToast("error", "You do not have permission to activate loans.");
+    return;
+  }
 
+  if (loan.status === "active") {
+    showToast("error", "Loan is already active.");
+    return;
+  }
+
+  const startDate = loan.start_date ? new Date(loan.start_date) : new Date();
+  const repayments = Array.from({ length: loan.duration_days }, (_, index) => {
+    const dueDate = new Date(startDate);
+    dueDate.setDate(startDate.getDate() + index);
+
+    return {
+      loan_id: loan.id,
+      member_id: loan.member_id,
+      due_date: dueDate.toISOString().split("T")[0],
+      expected_amount: loan.daily_payment_amount,
+      paid_amount: 0,
+      balance_remaining:
+        loan.total_expected_repayment -
+        loan.daily_payment_amount * index,
+      payment_status: "pending",
+    };
+  });
+
+  const { error: repaymentError } = await supabase
+    .from("loan_repayments")
+    .insert(repayments);
+
+  if (repaymentError) {
+    console.error(repaymentError);
+    showToast("error", "Failed to generate repayment schedule.");
+    return;
+  }
+
+  const { error: loanError } = await supabase
+    .from("loans")
+    .update({
+      status: "active",
+      start_date: startDate.toISOString().split("T")[0],
+      end_date: repayments[repayments.length - 1]?.due_date,
+    })
+    .eq("id", loan.id);
+
+  if (loanError) {
+    console.error(loanError);
+    showToast("error", "Failed to activate loan.");
+    return;
+  }
+
+  await logAudit({
+    action: "loan_activated",
+    entityType: "loan",
+    entityId: loan.id,
+    oldValue: {
+      status: loan.status,
+    },
+    newValue: {
+      status: "active",
+      repayment_days: loan.duration_days,
+      daily_payment_amount: loan.daily_payment_amount,
+      total_expected_repayment: loan.total_expected_repayment,
+    },
+    metadata: {
+      member_id: loan.member_id,
+      business_name: loan.business_name,
+    },
+  });
+
+  showToast("success", "Loan activated and repayment schedule generated.");
+  loadLoans();
+  loadLoanRepayments();
+}
   async function quickUpdateApplicationStatus(applicationId: string, status: string) {
     const { error } = await supabase
       .from("business_applications")
@@ -1333,7 +1662,392 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
             </Card>
           ))}
         </div>
+        <Card className="mt-8 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <h2 className="text-2xl font-black text-[#0D2D6E]">
+      Create New Loan
+    </h2>
 
+    <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <select
+        className="rounded-lg border px-3 py-2"
+    value={newLoan.member_id || ""}
+        onChange={(e) =>
+          setNewLoan({...newLoan, member_id: e.target.value})
+        }
+      >
+        <option value="">Select Member</option>
+        {members.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.full_name} ({m.member_number})
+          </option>
+        ))}
+      </select>
+
+      <input
+        type="text"
+        placeholder="Business Name"
+       value={newLoan.business_name || ""}
+        onChange={(e) =>
+          setNewLoan({...newLoan, business_name: e.target.value})
+        }
+        className="rounded-lg border px-3 py-2"
+      />
+
+      <input
+        type="number"
+        placeholder="Loan Amount"
+        value={newLoan.loan_amount || ""}
+        onChange={(e) =>
+          setNewLoan({...newLoan, loan_amount: Number(e.target.value)})
+        }
+        className="rounded-lg border px-3 py-2"
+      />
+
+      <input
+        type="number"
+        placeholder="Duration (days)"
+       value={newLoan.duration_days ?? ""}
+        onChange={(e) =>
+          setNewLoan({...newLoan, duration_days: Number(e.target.value)})
+        }
+        className="rounded-lg border px-3 py-2"
+      />
+
+      <input
+        type="text"
+        placeholder="Purpose"
+       value={newLoan.purpose || ""}
+        onChange={(e) =>
+          setNewLoan({...newLoan, purpose: e.target.value})
+        }
+        className="rounded-lg border px-3 py-2 md:col-span-2"
+      />
+    </div>
+
+    <div className="mt-6 flex justify-end">
+      <Button
+        onClick={createLoan}
+        disabled={creatingLoan}
+        className="px-6 py-3"
+      >
+        {creatingLoan ? "Creating..." : "Create Loan"}
+      </Button>
+    </div>
+  </CardContent>
+</Card>
+<Card className="mt-8 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <h2 className="text-2xl font-black text-[#0D2D6E]">
+          Loan Management
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Track business loans, repayment terms, daily payment amounts, and approval status.
+        </p>
+      </div>
+    </div>
+
+    <div className="mt-6 overflow-x-auto">
+      {loadingLoans ? (
+        <p className="text-sm font-semibold text-slate-500">
+          Loading loans...
+        </p>
+      ) : loans.length === 0 ? (
+        <p className="text-sm font-semibold text-slate-500">
+          No loans created yet.
+        </p>
+      ) : (
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead>
+            <tr className="border-b text-xs uppercase text-slate-500">
+              <th className="py-3">Business</th>
+              <th className="py-3">Amount</th>
+              <th className="py-3">Daily Payment</th>
+              <th className="py-3">Duration</th>
+              <th className="py-3">Total Repayment</th>
+              <th className="py-3">Status</th>
+              <th className="py-3">Created</th>
+              <th className="py-3">Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {loans.map((loan) => (
+              <tr key={loan.id} className="border-b">
+                <td className="py-4 font-bold text-[#0D2D6E]">
+                  {loan.business_name || "-"}
+                </td>
+
+                <td className="py-4 text-slate-600">
+                  FCFA {Number(loan.loan_amount || 0).toLocaleString()}
+                </td>
+
+                <td className="py-4 text-slate-600">
+                  FCFA {Number(loan.daily_payment_amount || 0).toLocaleString()}
+                </td>
+
+                <td className="py-4 text-slate-600">
+                  {loan.duration_days} days
+                </td>
+
+                <td className="py-4 font-bold text-slate-700">
+                  FCFA {Number(loan.total_expected_repayment || 0).toLocaleString()}
+                </td>
+
+                <td className="py-4">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                    {loan.status.replace("_", " ").toUpperCase()}
+                  </span>
+                </td>
+
+                <td className="py-4 text-slate-600">
+                  {loan.created_at
+                    ? new Date(loan.created_at).toLocaleDateString()
+                    : "-"}
+                </td>
+                <td className="py-4">
+  {loan.status !== "active" ? (
+    canManagePayments ? (
+      <Button
+        onClick={() => activateLoan(loan)}
+        className="px-4 py-2"
+      >
+        Activate
+      </Button>
+    ) : (
+      <span className="text-sm font-semibold text-slate-400">
+        No access
+      </span>
+    )
+  ) : (
+    <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
+      Active
+    </span>
+  )}
+</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  </CardContent>
+</Card>
+<Card className="mt-8 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <div className="flex items-center justify-between">
+      <div>
+        <h2 className="text-2xl font-black text-[#0D2D6E]">
+          Daily Repayment Collections
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Track due repayments and collections.
+        </p>
+      </div>
+    </div>
+
+    {loadingLoanRepayments ? (
+      <p className="mt-6 font-semibold text-slate-600">
+        Loading repayments...
+      </p>
+    ) : loanRepayments.length === 0 ? (
+      <p className="mt-6 font-semibold text-slate-600">
+        No repayment schedules found.
+      </p>
+    ) : (
+      <div className="mt-6 overflow-x-auto">
+        <div className="flex flex-wrap gap-2 mb-4">
+  {[
+    { label: "All", value: "all" },
+    { label: "Due Today", value: "due_today" },
+    { label: "Overdue", value: "overdue" },
+    { label: "Pending", value: "pending" },
+    { label: "Partial", value: "partial" },
+    { label: "Paid", value: "paid" },
+    { label: "Missed", value: "missed" },
+  ].map((f) => (
+    <Button
+      key={f.value}
+      onClick={() => setRepaymentFilter(f.value as any)}
+     variant={repaymentFilter === f.value ? "default" : "outline"}
+      className="px-3 py-1 text-sm"
+    >
+      {f.label}
+    </Button>
+  ))}
+</div>
+        <table className="w-full min-w-[1100px] text-left text-sm">
+          <thead>
+            <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+              <th className="py-4">Due Date</th>
+              <th className="py-4">Expected</th>
+              <th className="py-4">Paid</th>
+              <th className="py-4">Balance</th>
+              <th className="py-4">Status</th>
+              <th className="py-4">Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+           {loanRepayments
+  .filter((r) => {
+    const today = new Date().toISOString().split("T")[0];
+    switch (repaymentFilter) {
+      case "due_today":
+        return r.due_date === today;
+      case "overdue":
+        return r.due_date < today && r.payment_status === "pending";
+      case "pending":
+        return r.payment_status === "pending";
+      case "partial":
+        return r.payment_status === "partial";
+      case "paid":
+        return r.payment_status === "paid";
+      case "missed":
+        return r.payment_status === "missed";
+      default:
+        return true;
+    }
+  })
+  .map((repayment) => (
+              <tr key={repayment.id} className="border-b">
+                <td className="py-4 text-slate-600">
+                  {new Date(repayment.due_date).toLocaleDateString()}
+                </td>
+
+                <td className="py-4 font-bold">
+                  FCFA {Number(repayment.expected_amount).toLocaleString()}
+                </td>
+
+                <td className="py-4">
+                  FCFA {Number(repayment.paid_amount).toLocaleString()}
+                </td>
+
+                <td className="py-4">
+                  FCFA {Number(repayment.balance_remaining).toLocaleString()}
+                </td>
+
+                <td className="py-4">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                    {repayment.payment_status.toUpperCase()}
+                  </span>
+                </td>
+
+<td className="py-4">
+  {canManagePayments ? (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        type="number"
+        placeholder="Paid amount"
+        className="w-28 rounded-lg border px-2 py-1 text-sm"
+        value={repaymentInputs[repayment.id]?.paid_amount || ""}
+        onChange={(e) =>
+          setRepaymentInputs({
+            ...repaymentInputs,
+            [repayment.id]: {
+              ...repaymentInputs[repayment.id],
+              paid_amount: e.target.value,
+            },
+          })
+        }
+      />
+
+      <select
+        className="rounded-lg border px-2 py-1 text-sm"
+        value={repaymentInputs[repayment.id]?.payment_method || ""}
+        onChange={(e) =>
+          setRepaymentInputs({
+            ...repaymentInputs,
+            [repayment.id]: {
+              ...repaymentInputs[repayment.id],
+              payment_method: e.target.value,
+            },
+          })
+        }
+      >
+        <option value="">Method</option>
+        <option value="cash">Cash</option>
+        <option value="momo">Mobile Money</option>
+        <option value="bank">Bank</option>
+        <option value="transfer">Transfer</option>
+      </select>
+
+      <input
+        type="text"
+        placeholder="Reference"
+        className="w-32 rounded-lg border px-2 py-1 text-sm"
+        value={repaymentInputs[repayment.id]?.reference || ""}
+        onChange={(e) =>
+          setRepaymentInputs({
+            ...repaymentInputs,
+            [repayment.id]: {
+              ...repaymentInputs[repayment.id],
+              reference: e.target.value,
+            },
+          })
+        }
+      />
+
+      <input
+        type="text"
+        placeholder="Notes"
+        className="w-40 rounded-lg border px-2 py-1 text-sm"
+        value={repaymentInputs[repayment.id]?.notes || ""}
+        onChange={(e) =>
+          setRepaymentInputs({
+            ...repaymentInputs,
+            [repayment.id]: {
+              ...repaymentInputs[repayment.id],
+              notes: e.target.value,
+            },
+          })
+        }
+      />
+
+      <Button
+        onClick={() =>
+          updateRepayment(repayment.id, {
+            paid_amount: Number(
+              repaymentInputs[repayment.id]?.paid_amount || 0
+            ),
+            payment_method:
+              repaymentInputs[repayment.id]?.payment_method || undefined,
+            reference:
+              repaymentInputs[repayment.id]?.reference || undefined,
+            notes: repaymentInputs[repayment.id]?.notes || undefined,
+          })
+        }
+        className="px-4 py-1"
+      >
+        Record
+      </Button>
+
+      <Button
+        onClick={() =>
+          updateRepayment(repayment.id, {
+            paid_amount: 0,
+            payment_status: "missed",
+          })
+        }
+        className="bg-red-600 px-4 py-1 hover:bg-red-700"
+      >
+        Missed
+      </Button>
+    </div>
+  ) : (
+    <span className="text-slate-400">No access</span>
+  )}
+</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </CardContent>
+</Card>
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
             <div className="flex items-center justify-between gap-4">
