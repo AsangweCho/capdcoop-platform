@@ -78,6 +78,15 @@ type ApplicationDocument = {
   file_path: string;
   created_at: string;
 };
+type AdminUser = {
+  id: string;
+  auth_user_id: string;
+  full_name: string | null;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string | null;
+};
 
 const stats = [
   { title: "Registered Members", value: "members", icon: Users },
@@ -124,58 +133,98 @@ export default function AdminDashboard() {
   const [uploadingCertificateFor, setUploadingCertificateFor] = useState("");
   const [savingMember, setSavingMember] = useState(false);
 
+ 
+const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
+
   const [toast, setToast] = useState<{
   type: "success" | "error";
   message: string;
 } | null>(null);
+const [currentAdmin, setCurrentAdmin] = useState<{
+  id: string;
+  auth_user_id: string;
+  full_name: string | null;
+  email: string;
+  role: string;
+  is_active: boolean;
+} | null>(null);
 
-  const filteredApplications = useMemo(() => {
-    const search = applicationSearch.toLowerCase();
+const canManageAdmins = currentAdmin?.role === "super_admin";
 
-    return applications.filter((application) => {
-      const matchesSearch =
-        application.business_name.toLowerCase().includes(search) ||
-        application.full_name.toLowerCase().includes(search) ||
-        application.phone.toLowerCase().includes(search);
+const canManageNotices =
+  currentAdmin?.role === "super_admin" ||
+  currentAdmin?.role === "admin";
 
-      const matchesStatus =
-        applicationStatusFilter === "all" ||
-        application.application_status === applicationStatusFilter;
+const canManageCertificates =
+  currentAdmin?.role === "super_admin" ||
+  currentAdmin?.role === "admin" ||
+  currentAdmin?.role === "certificate_officer";
 
-      return matchesSearch && matchesStatus;
-    });
-  }, [applications, applicationSearch, applicationStatusFilter]);
+const canManageMembers =
+  currentAdmin?.role === "super_admin" ||
+  currentAdmin?.role === "admin" ||
+  currentAdmin?.role === "membership_officer";
+
+const canManagePayments =
+  currentAdmin?.role === "super_admin" ||
+  currentAdmin?.role === "admin" ||
+  currentAdmin?.role === "finance";
+
+const filteredApplications = useMemo(() => {
+  const search = applicationSearch.toLowerCase();
+
+  return applications.filter((application) => {
+    const businessName = application.business_name || "";
+    const fullName = application.full_name || "";
+    const phone = application.phone || "";
+
+    const matchesSearch =
+      businessName.toLowerCase().includes(search) ||
+      fullName.toLowerCase().includes(search) ||
+      phone.toLowerCase().includes(search);
+
+    const matchesStatus =
+      applicationStatusFilter === "all" ||
+      application.application_status === applicationStatusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+}, [applications, applicationSearch, applicationStatusFilter]);
 
   useEffect(() => {
     async function checkAdminAccess() {
-      const { data: sessionData } = await supabase.auth.getSession();
+  const { data: sessionData } = await supabase.auth.getSession();
 
-      if (!sessionData.session) {
-        window.location.href = "/login";
-        return;
-      }
+  if (!sessionData.session) {
+    window.location.href = "/login";
+    return;
+  }
 
-      const user = sessionData.session.user;
+  const user = sessionData.session.user;
 
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
+  const { data: adminUser, error } = await supabase
+    .from("admin_users")
+    .select("id, auth_user_id, full_name, email, role, is_active")
+    .eq("auth_user_id", user.id)
+    .eq("is_active", true)
+    .maybeSingle();
 
-      if (error || !profile) {
-        setAdminError("Unable to verify admin access.");
-        setCheckingAdmin(false);
-        return;
-      }
+  if (error) {
+    console.error(error);
+    setAdminError("Unable to verify admin access.");
+    setCheckingAdmin(false);
+    return;
+  }
 
-      if (profile.role !== "admin" && profile.role !== "super_admin") {
-        window.location.href = "/member";
-        return;
-      }
+  if (!adminUser) {
+    window.location.href = "/member";
+    return;
+  }
 
-      setCheckingAdmin(false);
-    }
+  setCurrentAdmin(adminUser);
+  setCheckingAdmin(false);
+}
 
     checkAdminAccess();
   }, []);
@@ -183,10 +232,21 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (checkingAdmin || adminError) return;
 
-    loadPayments();
-    loadMembers();
-    loadApplications();
-  }, [checkingAdmin, adminError]);
+   loadPayments();
+loadMembers();
+loadApplications();
+loadAdminUsers();
+  }, 
+  [checkingAdmin, adminError]);
+  const isSuperAdmin = currentAdmin?.role === "super_admin";
+
+const canViewDashboard =
+  currentAdmin?.role === "super_admin" ||
+  currentAdmin?.role === "admin" ||
+  currentAdmin?.role === "finance" ||
+  currentAdmin?.role === "membership_officer" ||
+  currentAdmin?.role === "certificate_officer" ||
+  currentAdmin?.role === "viewer";
 
   async function loadPayments() {
     setLoadingPayments(true);
@@ -267,6 +327,26 @@ function showToast(type: "success" | "error", message: string) {
   setTimeout(() => {
     setToast(null);
   }, 4000);
+}
+async function loadAdminUsers() {
+  if (!canManageAdmins) return;
+
+  setLoadingAdminUsers(true);
+
+  const { data, error } = await supabase
+    .from("admin_users")
+    .select("id, auth_user_id, full_name, email, role, is_active, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    showToast("error", "Failed to load admin users.");
+    setLoadingAdminUsers(false);
+    return;
+  }
+
+  setAdminUsers((data as AdminUser[]) || []);
+  setLoadingAdminUsers(false);
 }
 
 async function activateMember(memberId: string) {
@@ -529,6 +609,25 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
     showToast("error", error.message || "Failed to delete certificate.");
   }
 }
+
+ async function updateAdminUser(
+  adminId: string,
+  updates: { role?: string; is_active?: boolean }
+) {
+  const { error } = await supabase
+    .from("admin_users")
+    .update (updates)
+    .eq("id", adminId);
+
+  if (error) {
+    console.error(error);
+    showToast("error", "Failed to update admin.");
+    return;
+  }
+
+  showToast("success", "Admin updated successfully.");
+  loadAdminUsers();
+}
   async function createMember() {
     if (!newMemberName || !newMemberEmail || !newMemberNumber) {
       setMemberMessage("Please enter full name, email, and member number.");
@@ -687,7 +786,6 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
       )
     );
   }
-
   async function openApplicationDocument(filePath: string) {
     const { data, error } = await supabase.storage
       .from("business-documents")
@@ -738,13 +836,21 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
+  {currentAdmin && (
+    <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
+      {currentAdmin.role.replace("_", " ").toUpperCase()}
+    </div>
+  )}
+
+{canManageNotices && (
   <Button
     className="px-5 py-3"
     variant="outline"
   >
     New Notice
   </Button>
+)}
 
   <Button
     onClick={handleLogout}
@@ -776,8 +882,121 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
             </p>
           </div>
         </div>
+{canManageAdmins && (
+  <Card className="mt-8 border-slate-200 bg-white shadow-sm">
+    <CardContent className="p-8">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-[#0D2D6E]">
+            Admin Management
+          </h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Manage platform administrators and role access.
+          </p>
+        </div>
+      </div>
 
+      <div className="mt-6 overflow-x-auto">
+        {loadingAdminUsers ? (
+          <p className="text-sm font-semibold text-slate-500">
+            Loading admin users...
+          </p>
+        ) : adminUsers.length === 0 ? (
+          <p className="text-sm font-semibold text-slate-500">
+            No admin users found.
+          </p>
+        ) : (
+          <table className="w-full min-w-[800px] text-left text-sm">
+            <thead>
+              <tr className="border-b text-xs uppercase text-slate-500">
+                <th className="py-3">Name</th>
+                <th className="py-3">Email</th>
+                <th className="py-3">Role</th>
+                <th className="py-3">Status</th>
+                <th className="py-3">Created</th>
+                <th className="py-3">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {adminUsers.map((admin) => (
+                <tr key={admin.id} className="border-b">
+                  <td className="py-4 font-bold text-[#0D2D6E]">
+                    {admin.full_name || "-"}
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+                    {admin.email}
+                  </td>
+
+                  <td className="py-4">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                      {admin.role.replace("_", " ").toUpperCase()}
+                    </span>
+                  </td>
+
+                  <td className="py-4">
+                    <span
+                      className={
+                        admin.is_active
+                          ? "rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700"
+                          : "rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700"
+                      }
+                    >
+                      {admin.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+
+                  <td className="py-4 text-slate-600">
+  {admin.created_at
+    ? new Date(admin.created_at).toLocaleDateString()
+    : "-"}
+</td>
+
+<td className="py-4">
+  <div className="flex flex-wrap gap-2">
+    <select
+      value={admin.role}
+      onChange={(e) =>
+        updateAdminUser(admin.id, { role: e.target.value })
+      }
+      className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+    >
+      <option value="super_admin">Super Admin</option>
+      <option value="admin">Admin</option>
+      <option value="finance">Finance</option>
+      <option value="membership_officer">Membership Officer</option>
+      <option value="certificate_officer">Certificate Officer</option>
+      <option value="viewer">Viewer</option>
+    </select>
+
+    <Button
+      onClick={() =>
+        updateAdminUser(admin.id, {
+          is_active: !admin.is_active,
+        })
+      }
+      className={
+        admin.is_active
+          ? "bg-red-600 hover:bg-red-700"
+          : "bg-green-700 hover:bg-green-800"
+      }
+    >
+      {admin.is_active ? "Deactivate" : "Activate"}
+    </Button>
+  </div>
+</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </CardContent>
+  </Card>
+)}
         <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          
           {[
             {
               title: "Submitted Applications",
@@ -940,7 +1159,8 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
 </td>
 
 <td className="py-4">
-  {payment.payment_status === "pending" ? (
+{payment.payment_status === "pending" ? (
+  canManagePayments ? (
     <Button
       onClick={() => approvePayment(payment.id)}
       disabled={approvingId === payment.id}
@@ -949,10 +1169,15 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
       {approvingId === payment.id ? "Approving..." : "Approve"}
     </Button>
   ) : (
-    <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
-      Approved
+    <span className="text-sm font-semibold text-slate-400">
+      No access
     </span>
-  )}
+  )
+) : (
+  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
+    Approved
+  </span>
+)}
 </td>
 
 <td className="py-4">
@@ -1240,16 +1465,19 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
                         </td>
 
                         <td className="py-4">
-                          <span
-                            className={
-                              member.membership_status === "active"
-                                ? "rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700"
-                                : "rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700"
-                            }
-                          >
-                            {member.membership_status}
-                          </span>
-                        </td>
+  {canManageMembers ? (
+    <Button
+      onClick={() => startEditMember(member)}
+      className="px-4 py-2"
+    >
+      Edit
+    </Button>
+  ) : (
+    <span className="text-sm font-semibold text-slate-400">
+      No access
+    </span>
+  )}
+</td>
 
                         <td className="py-4">
                           <Button
@@ -1259,8 +1487,9 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
                             Edit
                           </Button>
                         </td>
-<td className="px-4 py-3">
-  <div className="flex flex-col gap-2">
+{canManageCertificates ? (
+  <td className="px-4 py-3">
+    <div className="flex flex-col gap-2">
     <label className="inline-block cursor-pointer rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800">
       {uploadingCertificateFor === member.id ? "Uploading..." : "Upload / Replace"}
 
@@ -1294,8 +1523,13 @@ async function deleteShareCertificate(certificateId: string, certificatePath: st
     Delete Certificate
   </button>
 ) : null}
-  </div>
-</td>
+      </div>
+  </td>
+) : (
+  <td className="px-4 py-3 text-sm font-semibold text-slate-400">
+    No access
+  </td>
+)}
                       </tr>
                     ))}
                   </tbody>

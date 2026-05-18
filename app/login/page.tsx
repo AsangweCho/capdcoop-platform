@@ -38,57 +38,53 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
+const { data: adminUser, error: adminError } = await supabase
+  .from("admin_users")
+  .select("role, is_active")
+  .eq("auth_user_id", user.id)
+  .eq("is_active", true)
+  .maybeSingle();
+ 
+  console.log("LOGIN USER:", user.id, user.email);
+console.log("ADMIN USER:", adminUser);
+console.log("ADMIN ERROR:", adminError);
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-
-    if (profileError) {
-      setError(profileError.message);
-      setLoading(false);
-      return;
-    }
-
-    if (!profile) {
-      setError("User profile not found.");
-      setLoading(false);
-      return;
-    }
-
-   console.log("PROFILE:", profile);
-    if (profile.role === "admin" || profile.role === "super_admin") {
-  window.location.href = "/admin";
+if (adminError) {
+  setError(adminError.message);
+  setLoading(false);
   return;
 }
 
-    const { data: memberData, error: memberError } = await supabase
-      .from("members")
-      .select("must_change_password")
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
+if (adminUser) {
+  router.replace("/admin");
+  return;
+}
 
-    if (memberError) {
-      setError(memberError.message);
-      setLoading(false);
-      return;
-    }
+const { data: memberData, error: memberError } = await supabase
+  .from("members")
+  .select("must_change_password")
+  .eq("auth_user_id", user.id)
+  .maybeSingle();
 
-    if (!memberData) {
-      setError("Member record not found.");
-      setLoading(false);
-      return;
-    }
+if (memberError) {
+  setError(memberError.message);
+  setLoading(false);
+  return;
+}
 
-    if (memberData.must_change_password) {
-      router.replace("/change-password");
-      return;
-    }
+if (!memberData) {
+  setError("No admin or member profile found for this account.");
+  setLoading(false);
+  return;
+}
 
-    router.replace("/member");
-  }
+if (memberData.must_change_password) {
+  router.replace("/change-password");
+  return;
+}
+
+router.replace("/member");
+}
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
