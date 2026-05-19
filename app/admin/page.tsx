@@ -177,6 +177,7 @@ export default function AdminDashboard() {
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberPhone, setNewMemberPhone] = useState("");
+  const [newMemberIdCard, setNewMemberIdCard] = useState("");
   const [newMemberNumber, setNewMemberNumber] = useState("");
   const [newMemberShares, setNewMemberShares] = useState("");
   const [newMemberDividends, setNewMemberDividends] = useState("0");
@@ -1031,15 +1032,16 @@ loadLoanRepayments();
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        full_name: newMemberName,
-        email: newMemberEmail,
-        phone: newMemberPhone,
-        member_number: newMemberNumber,
-        membership_status: newMemberStatus,
-        total_shares: Number(newMemberShares || 0),
-        declared_dividends: Number(newMemberDividends || 0),
-      }),
+     body: JSON.stringify({
+  full_name: newMemberName,
+  email: newMemberEmail,
+  phone: newMemberPhone,
+  id_card_number: newMemberIdCard,
+  member_number: newMemberNumber,
+  membership_status: newMemberStatus,
+  total_shares: Number(newMemberShares || 0),
+  declared_dividends: Number(newMemberDividends || 0),
+}),
     });
 
     const result = await response.json();
@@ -1055,6 +1057,7 @@ loadLoanRepayments();
     setNewMemberName("");
     setNewMemberEmail("");
     setNewMemberPhone("");
+    setNewMemberIdCard("");
     setNewMemberNumber("");
     setNewMemberShares("");
     setNewMemberDividends("0");
@@ -2227,6 +2230,13 @@ async function activateLoan(loan: Loan) {
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
                   placeholder="Phone"
                 />
+                <input
+  type="text"
+  placeholder="National ID / ID Card Number"
+  value={newMemberIdCard}
+  onChange={(e) => setNewMemberIdCard(e.target.value)}
+  className="rounded-2xl border border-slate-200 px-4 py-3"
+ />
 
                 <input
                   value={newMemberNumber}

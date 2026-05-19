@@ -5,15 +5,16 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const {
-      full_name,
-      email,
-      phone,
-      member_number,
-      membership_status,
-      total_shares,
-      declared_dividends,
-    } = body;
+ const {
+  full_name,
+  email,
+  phone,
+  id_card_number,
+  member_number,
+  membership_status,
+  total_shares,
+  declared_dividends,
+} = body;
 
     if (!full_name || !email || !member_number) {
       return NextResponse.json(
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
         full_name,
         email,
         phone,
+        id_card_number,
         member_number,
         membership_status: membership_status || "active",
         total_shares: shares,
@@ -57,8 +59,8 @@ export async function POST(request: Request) {
         must_change_password: true,
       })
       .select(
-        "id, full_name, email, phone, member_number, membership_status, total_shares, portfolio_value, declared_dividends, created_at"
-      )
+  "id, full_name, email, phone, id_card_number, member_number, membership_status, total_shares, portfolio_value, declared_dividends, created_at"
+)
       .single();
 
     if (memberError) {
