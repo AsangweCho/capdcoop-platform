@@ -1,4 +1,4 @@
-import SiteHeader from "@/components/SiteHeader";
+
 import SiteFooter from "@/components/SiteFooter";
 import { CheckCircle2, ShieldCheck, Users, Building2 } from "lucide-react";
 import Image from "next/image";
@@ -6,7 +6,6 @@ import Image from "next/image";
 export default function AboutPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-  <SiteHeader />
 
       <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-16">
         <div className="mx-auto max-w-7xl px-6">

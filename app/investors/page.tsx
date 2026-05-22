@@ -1,11 +1,9 @@
 import Link from "next/link";
-import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
 export default function InvestorsPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-      <SiteHeader />
 
       <section className="mx-auto grid max-w-7xl items-center gap-8 px-6 py-14 lg:grid-cols-2">
         <div>

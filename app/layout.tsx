@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import Navigation from "@/components/ui/Navigation";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://capdcoop.com"),
@@ -9,10 +10,23 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico" },
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      {
+        url: "/favicon-16x16.png",
+        sizes: "16x16",
+        type: "image/png",
+      },
+      {
+        url: "/favicon-32x32.png",
+        sizes: "32x32",
+        type: "image/png",
+      },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+        sizes: "180x180",
+      },
+    ],
   },
   manifest: "/site.webmanifest",
   openGraph: {
@@ -31,7 +45,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased bg-white text-slate-900">
-        {children}
+        <Navigation />
+        <main>{children}</main>
       </body>
     </html>
   );

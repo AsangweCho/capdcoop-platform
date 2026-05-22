@@ -12,68 +12,6 @@ import {
 export default function MembershipPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-           <Link href="/">
-  <img
-    src="/capdcoop-logo.png"
-    alt="CAPDCOOP Logo"
-    className="h-16 w-auto"
-  />
-</Link>
-
-<nav className="hidden items-center gap-3 lg:flex">
-  <Link
-    href="/about"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    About
-  </Link>
-
-  <Link
-    href="/membership"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Membership
-  </Link>
-
-  <Link
-    href="/investors"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Investors
-  </Link>
-
-  <Link
-    href="/business-support"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Business Support
-  </Link>
-
-  <Link
-    href="/faq"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    FAQ
-  </Link>
-
-  <Link
-    href="/contact"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Contact
-  </Link>
-</nav>
-
-          <a
-            href="/login"
-            className="rounded-2xl bg-[#0D2D6E] px-5 py-3 text-sm font-bold text-white"
-          >
-            Member Login
-          </a>
-        </div>
-      </header>
 <section className="mx-auto grid max-w-7xl items-center gap-8 px-6 py-14 lg:grid-cols-2">
   <div>
     <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-green)]">

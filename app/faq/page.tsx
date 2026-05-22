@@ -1,4 +1,3 @@
-import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { HelpCircle, CheckCircle2 } from "lucide-react";
 
@@ -38,7 +37,6 @@ const faqs = [
 export default function FAQPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-    <SiteHeader />
 
       <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-16">
         <div className="mx-auto max-w-7xl px-6">

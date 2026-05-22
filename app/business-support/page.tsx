@@ -1,4 +1,3 @@
-import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { ArrowRight, CheckCircle2, FileText, SearchCheck, ShieldCheck, WalletCards } from "lucide-react";
 import Image from "next/image";
@@ -6,7 +5,6 @@ import Image from "next/image";
 export default function BusinessSupportPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-<SiteHeader />
 
 <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-16">
   <div className="mx-auto grid max-w-7xl items-center gap-8 px-6 lg:grid-cols-2">

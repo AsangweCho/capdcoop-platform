@@ -1,11 +1,9 @@
-import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { Mail, MapPin, Phone, Send, ShieldCheck } from "lucide-react";
 
 export default function ContactPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-<SiteHeader />
 
       <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50 py-16">
         <div className="mx-auto max-w-7xl px-6">

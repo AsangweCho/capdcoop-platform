@@ -1,5 +1,4 @@
 "use client";
-import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
 import { useState } from "react";
@@ -144,7 +143,6 @@ export default function BusinessApplicationPage() {
 
   return (
     <main className="min-h-screen bg-[var(--capd-bg)] text-slate-900">
-  <SiteHeader />
   <section className="px-6 py-10">
       <div className="mx-auto max-w-4xl">
         <div className="rounded-[2rem] bg-white p-8 shadow-sm">

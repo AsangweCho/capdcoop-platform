@@ -1,5 +1,4 @@
 import Link from "next/link";
-import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import Image from "next/image";
 import BrandLogo from "@/components/BrandLogo";
@@ -16,74 +15,6 @@ import {
 export default function Home() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
-      <header className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-<Link href="/" className="flex items-center">
-  <BrandLogo compact />
-</Link>
-
-          <nav className="hidden items-center gap-3 lg:flex">
-  <Link
-    href="/about"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    About
-  </Link>
-
-  <Link
-    href="/membership"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Membership
-  </Link>
-
-  <Link
-    href="/investors"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Investors
-  </Link>
-
-  <Link
-    href="/business-support"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Business Support
-  </Link>
-
-  <Link
-    href="/faq"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    FAQ
-  </Link>
-
-  <Link
-    href="/contact"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Contact
-  </Link>
-</nav>
-
-  <div className="hidden items-center gap-3 md:flex">
-  <Link
-    href="/login"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Login
-  </Link>
-
-  <Link
-    href="/apply"
-    className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-  >
-    Apply
-  </Link>
-</div>
-        </div>
-      </header>
-
       <section className="bg-gradient-to-br from-white via-slate-50 to-blue-50">
         <div className="mx-auto grid max-w-7xl items-center gap-8 px-6 py-14 lg:grid-cols-2">
           <div>
