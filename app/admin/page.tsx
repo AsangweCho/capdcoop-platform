@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import BrandLogo from "@/components/BrandLogo";
 import { supabase } from "@/lib/supabase";
-
+ import SavingsModule from "./SavingsModule";
 import MembersModule from "./MembersModule";
 import LoanModule from "./LoanModule";
 import PaymentModule from "./PaymentModule";
@@ -15,6 +15,7 @@ import AuditLogsModule from "./AuditLogsModule";
 import AdminUsersModule from "./AdminUsersModule";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import AgentsModule from "./AgentsModule";
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -105,6 +106,8 @@ export default function AdminDashboard() {
             <TabsTrigger value="members">Members</TabsTrigger>
             <TabsTrigger value="loans">Loans</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
+            <TabsTrigger value="savings">Savings</TabsTrigger>
+            <TabsTrigger value="agents">Agents</TabsTrigger>
             <TabsTrigger value="audit">Audit Logs</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
           </TabsList>
@@ -120,7 +123,12 @@ export default function AdminDashboard() {
           <TabsContent value="payments">
             <PaymentModule currentAdmin={currentAdmin} />
           </TabsContent>
-
+    <TabsContent value="savings">
+  <SavingsModule />
+</TabsContent>
+ <TabsContent value="agents">
+  <AgentsModule currentAdmin={currentAdmin} />
+</TabsContent>
           <TabsContent value="audit">
             <AuditLogsModule currentAdmin={currentAdmin} />
           </TabsContent>
