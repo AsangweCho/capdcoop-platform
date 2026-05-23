@@ -12,7 +12,10 @@ type AgentTeam = {
   region: string | null;
   team_lead_name: string | null;
   bike_rider_name: string | null;
+  team_lead_id: string | null;
+  bike_rider_id: string | null;
   status: string;
+  notes: string | null;
   created_at: string;
 };
 
@@ -26,9 +29,11 @@ type Agent = {
   team_id: string | null;
   commission_rate: number;
   status: string;
+  daily_target: number | null;
+  weekly_target: number | null;
+  monthly_target: number | null;
   joined_at: string | null;
   created_at: string;
-  agent_teams?: AgentTeam | null;
 };
 
 type Commission = {
@@ -43,10 +48,6 @@ type Commission = {
   status: string;
   paid_at: string | null;
   created_at: string;
-  agents?: {
-    full_name: string;
-    agent_code: string;
-  } | null;
 };
 
 export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
@@ -59,8 +60,9 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
   const [teamName, setTeamName] = useState("");
   const [teamCode, setTeamCode] = useState("");
   const [region, setRegion] = useState("");
-  const [teamLeadName, setTeamLeadName] = useState("");
-  const [bikeRiderName, setBikeRiderName] = useState("");
+  const [teamLeadId, setTeamLeadId] = useState("");
+  const [bikeRiderId, setBikeRiderId] = useState("");
+  const [teamNotes, setTeamNotes] = useState("");
 
   const [agentName, setAgentName] = useState("");
   const [agentCode, setAgentCode] = useState("");
@@ -69,6 +71,9 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
   const [agentRole, setAgentRole] = useState("agent");
   const [agentTeamId, setAgentTeamId] = useState("");
   const [commissionRate, setCommissionRate] = useState("10");
+  const [dailyTarget, setDailyTarget] = useState("");
+  const [weeklyTarget, setWeeklyTarget] = useState("");
+  const [monthlyTarget, setMonthlyTarget] = useState("");
 
   const canManageAgents =
     currentAdmin?.role === "super_admin" ||
@@ -102,19 +107,7 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
   async function loadAgents() {
     const { data, error } = await supabase
       .from("agents")
-      .select(`
-        *,
-        agent_teams (
-          id,
-          team_name,
-          team_code,
-          region,
-          team_lead_name,
-          bike_rider_name,
-          status,
-          created_at
-        )
-      `)
+      .select("*")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -122,19 +115,13 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    setAgents((data as unknown as Agent[]) || []);
+    setAgents(data || []);
   }
 
   async function loadCommissions() {
     const { data, error } = await supabase
       .from("agent_commissions")
-      .select(`
-        *,
-        agents (
-          full_name,
-          agent_code
-        )
-      `)
+      .select("*")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -142,7 +129,7 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    setCommissions((data as unknown as Commission[]) || []);
+    setCommissions(data || []);
   }
 
   function generateTeamCode() {
@@ -151,6 +138,16 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
 
   function generateAgentCode() {
     return `CAPD-AG-${Date.now().toString().slice(-5)}`;
+  }
+
+  function getAgentName(agentId: string | null) {
+    if (!agentId) return "-";
+    return agents.find((agent) => agent.id === agentId)?.full_name || "-";
+  }
+
+  function getTeamName(teamId: string | null) {
+    if (!teamId) return "-";
+    return teams.find((team) => team.id === teamId)?.team_name || "-";
   }
 
   async function createTeam() {
@@ -164,12 +161,18 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
+    const selectedLead = agents.find((agent) => agent.id === teamLeadId);
+    const selectedBikeRider = agents.find((agent) => agent.id === bikeRiderId);
+
     const { error } = await supabase.from("agent_teams").insert({
       team_name: teamName.trim(),
       team_code: teamCode.trim() || generateTeamCode(),
       region: region.trim() || null,
-      team_lead_name: teamLeadName.trim() || null,
-      bike_rider_name: bikeRiderName.trim() || null,
+      team_lead_id: teamLeadId || null,
+      bike_rider_id: bikeRiderId || null,
+      team_lead_name: selectedLead?.full_name || null,
+      bike_rider_name: selectedBikeRider?.full_name || null,
+      notes: teamNotes.trim() || null,
       status: "active",
     });
 
@@ -178,12 +181,13 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    setMessage("Team created successfully.");
+    setMessage("Sales team created successfully.");
     setTeamName("");
     setTeamCode("");
     setRegion("");
-    setTeamLeadName("");
-    setBikeRiderName("");
+    setTeamLeadId("");
+    setBikeRiderId("");
+    setTeamNotes("");
     await loadTeams();
   }
 
@@ -213,6 +217,9 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
       role: agentRole,
       team_id: agentTeamId || null,
       commission_rate: rate,
+      daily_target: Number(dailyTarget || 0),
+      weekly_target: Number(weeklyTarget || 0),
+      monthly_target: Number(monthlyTarget || 0),
       status: "active",
     });
 
@@ -229,6 +236,24 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
     setAgentRole("agent");
     setAgentTeamId("");
     setCommissionRate("10");
+    setDailyTarget("");
+    setWeeklyTarget("");
+    setMonthlyTarget("");
+    await loadAgents();
+  }
+
+  async function updateAgentTeam(agentId: string, teamId: string) {
+    const { error } = await supabase
+      .from("agents")
+      .update({ team_id: teamId || null })
+      .eq("id", agentId);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage("Agent team updated.");
     await loadAgents();
   }
 
@@ -249,56 +274,90 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
     await loadAgents();
   }
 
-  async function markCommissionPaid(commission: Commission) {
+  async function updateTeamStatus(team: AgentTeam) {
+    const nextStatus = team.status === "active" ? "inactive" : "active";
+
     const { error } = await supabase
-      .from("agent_commissions")
-      .update({
-        status: "paid",
-        paid_at: new Date().toISOString(),
-      })
-      .eq("id", commission.id);
+      .from("agent_teams")
+      .update({ status: nextStatus })
+      .eq("id", team.id);
 
     if (error) {
       setMessage(error.message);
       return;
     }
 
-    setMessage("Commission marked as paid.");
-    await loadCommissions();
+    setMessage(`Team marked as ${nextStatus}.`);
+    await loadTeams();
   }
-
-  const totalAgents = agents.length;
-  const activeAgents = agents.filter((a) => a.status === "active").length;
-  const pendingCommission = commissions
-    .filter((c) => c.status === "pending")
-    .reduce((sum, c) => sum + Number(c.commission_amount || 0), 0);
-  const paidCommission = commissions
-    .filter((c) => c.status === "paid")
-    .reduce((sum, c) => sum + Number(c.commission_amount || 0), 0);
 
   const teamPerformance = useMemo(() => {
     return teams.map((team) => {
-      const teamAgents = agents.filter((a) => a.team_id === team.id);
+      const teamAgents = agents.filter((agent) => agent.team_id === team.id);
+      const teamAgentIds = teamAgents.map((agent) => agent.id);
+
+      const teamCommissions = commissions.filter(
+        (commission) =>
+          commission.agent_id && teamAgentIds.includes(commission.agent_id)
+      );
+
+      const totalCommission = teamCommissions.reduce(
+        (sum, commission) => sum + Number(commission.commission_amount || 0),
+        0
+      );
+
+      const pendingCommission = teamCommissions
+        .filter((commission) => commission.status === "pending")
+        .reduce(
+          (sum, commission) => sum + Number(commission.commission_amount || 0),
+          0
+        );
+
       return {
         team,
-        agents: teamAgents.length,
-        active: teamAgents.filter((a) => a.status === "active").length,
+        totalAgents: teamAgents.length,
+        activeAgents: teamAgents.filter((agent) => agent.status === "active")
+          .length,
+        salesAgents: teamAgents.filter((agent) => agent.role === "agent").length,
+        teamLeads: teamAgents.filter((agent) => agent.role === "team_lead")
+          .length,
+        bikeRiders: teamAgents.filter((agent) => agent.role === "bike_rider")
+          .length,
+        totalCommission,
+        pendingCommission,
       };
     });
-  }, [teams, agents]);
+  }, [teams, agents, commissions]);
+
+  const totalTeams = teams.length;
+  const activeTeams = teams.filter((team) => team.status === "active").length;
+  const totalAgents = agents.length;
+  const activeAgents = agents.filter((agent) => agent.status === "active").length;
+  const totalCommission = commissions.reduce(
+    (sum, commission) => sum + Number(commission.commission_amount || 0),
+    0
+  );
+  const pendingCommission = commissions
+    .filter((commission) => commission.status === "pending")
+    .reduce(
+      (sum, commission) => sum + Number(commission.commission_amount || 0),
+      0
+    );
 
   return (
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
+        <MetricCard title="Total Teams" value={totalTeams.toString()} />
+        <MetricCard title="Active Teams" value={activeTeams.toString()} />
         <MetricCard title="Total Agents" value={totalAgents.toString()} />
         <MetricCard title="Active Agents" value={activeAgents.toString()} />
         <MetricCard
-          title="Pending Commission"
-          value={`FCFA ${pendingCommission.toLocaleString()}`}
+          title="Total Commission"
+          value={`FCFA ${totalCommission.toLocaleString()}`}
         />
         <MetricCard
-          title="Paid Commission"
-          value={`FCFA ${paidCommission.toLocaleString()}`}
+          title="Pending Commission"
+          value={`FCFA ${pendingCommission.toLocaleString()}`}
         />
       </div>
 
@@ -313,9 +372,9 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
           <h2 className="text-2xl font-black text-[#0D2D6E]">
             Create Sales Team
           </h2>
+
           <p className="mt-2 text-sm text-slate-600">
-            Each team should have five sales agents, one team lead, and one bike
-            rider.
+            Structure each field team with a team lead, five sales agents, and a bike rider.
           </p>
 
           <div className="mt-6 grid gap-5 md:grid-cols-3">
@@ -340,18 +399,41 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
               placeholder="Region / Area"
             />
 
-            <input
-              value={teamLeadName}
-              onChange={(e) => setTeamLeadName(e.target.value)}
+            <select
+              value={teamLeadId}
+              onChange={(e) => setTeamLeadId(e.target.value)}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-              placeholder="Team lead name"
-            />
+            >
+              <option value="">Select Team Lead</option>
+              {agents
+                .filter((agent) => agent.role === "team_lead")
+                .map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.full_name} ({agent.agent_code})
+                  </option>
+                ))}
+            </select>
+
+            <select
+              value={bikeRiderId}
+              onChange={(e) => setBikeRiderId(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+            >
+              <option value="">Select Bike Rider</option>
+              {agents
+                .filter((agent) => agent.role === "bike_rider")
+                .map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.full_name} ({agent.agent_code})
+                  </option>
+                ))}
+            </select>
 
             <input
-              value={bikeRiderName}
-              onChange={(e) => setBikeRiderName(e.target.value)}
+              value={teamNotes}
+              onChange={(e) => setTeamNotes(e.target.value)}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-              placeholder="Bike rider name"
+              placeholder="Notes"
             />
           </div>
 
@@ -368,7 +450,7 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Create Agent
+            Create Agent / Team Member
           </h2>
 
           <div className="mt-6 grid gap-5 md:grid-cols-3">
@@ -376,7 +458,7 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-              placeholder="Agent full name"
+              placeholder="Full name"
             />
 
             <input
@@ -405,7 +487,7 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
               onChange={(e) => setAgentRole(e.target.value)}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
             >
-              <option value="agent">Agent</option>
+              <option value="agent">Sales Agent</option>
               <option value="team_lead">Team Lead</option>
               <option value="bike_rider">Bike Rider</option>
             </select>
@@ -429,6 +511,27 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
               placeholder="Commission rate %"
             />
+
+            <input
+              value={dailyTarget}
+              onChange={(e) => setDailyTarget(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+              placeholder="Daily target"
+            />
+
+            <input
+              value={weeklyTarget}
+              onChange={(e) => setWeeklyTarget(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+              placeholder="Weekly target"
+            />
+
+            <input
+              value={monthlyTarget}
+              onChange={(e) => setMonthlyTarget(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+              placeholder="Monthly target"
+            />
           </div>
 
           <Button
@@ -444,37 +547,76 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Team Overview
+            Sales Team Performance
           </h2>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {teamPerformance.map(({ team, agents, active }) => (
-              <div
-                key={team.id}
-                className="rounded-3xl border border-slate-200 bg-slate-50 p-5"
-              >
-                <p className="text-xl font-black text-[#0D2D6E]">
-                  {team.team_name}
-                </p>
-                <p className="mt-1 text-sm text-slate-600">
-                  {team.region || "No region"} · {team.team_code || "No code"}
-                </p>
-                <div className="mt-4 grid gap-3 text-sm font-semibold text-slate-700 md:grid-cols-2">
-                  <p>Team Lead: {team.team_lead_name || "-"}</p>
-                  <p>Bike Rider: {team.bike_rider_name || "-"}</p>
-                  <p>Agents: {agents}</p>
-                  <p>Active: {active}</p>
+          {teamPerformance.length === 0 ? (
+            <p className="mt-6 font-semibold text-slate-600">
+              No sales teams created yet.
+            </p>
+          ) : (
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {teamPerformance.map((item) => (
+                <div
+                  key={item.team.id}
+                  className="rounded-3xl border border-slate-200 bg-slate-50 p-5"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xl font-black text-[#0D2D6E]">
+                        {item.team.team_name}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {item.team.region || "No region"} ·{" "}
+                        {item.team.team_code || "No code"}
+                      </p>
+                    </div>
+
+                    <span
+                      className={
+                        item.team.status === "active"
+                          ? "rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700"
+                          : "rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600"
+                      }
+                    >
+                      {item.team.status}
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 text-sm font-semibold text-slate-700 md:grid-cols-2">
+                    <p>Team Lead: {getAgentName(item.team.team_lead_id)}</p>
+                    <p>Bike Rider: {getAgentName(item.team.bike_rider_id)}</p>
+                    <p>Total Members: {item.totalAgents}</p>
+                    <p>Active Agents: {item.activeAgents}</p>
+                    <p>Sales Agents: {item.salesAgents}</p>
+                    <p>Bike Riders: {item.bikeRiders}</p>
+                    <p>
+                      Commission: FCFA {item.totalCommission.toLocaleString()}
+                    </p>
+                    <p>
+                      Pending: FCFA {item.pendingCommission.toLocaleString()}
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={() => updateTeamStatus(item.team)}
+                    className="mt-5 px-4 py-2"
+                  >
+                    {item.team.status === "active"
+                      ? "Deactivate Team"
+                      : "Activate Team"}
+                  </Button>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Agents
+            Agents and Team Assignment
           </h2>
 
           {loading ? (
@@ -485,15 +627,18 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
             </p>
           ) : (
             <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-left text-sm">
+              <table className="w-full min-w-[1250px] text-left text-sm">
                 <thead>
                   <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-                    <th className="py-4">Agent</th>
+                    <th className="py-4">Name</th>
                     <th className="py-4">Code</th>
                     <th className="py-4">Role</th>
                     <th className="py-4">Team</th>
                     <th className="py-4">Phone</th>
                     <th className="py-4">Rate</th>
+                    <th className="py-4">Daily Target</th>
+                    <th className="py-4">Weekly Target</th>
+                    <th className="py-4">Monthly Target</th>
                     <th className="py-4">Status</th>
                     <th className="py-4">Action</th>
                   </tr>
@@ -505,16 +650,48 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
                       <td className="py-4 font-bold text-[#0D2D6E]">
                         {agent.full_name}
                       </td>
+
                       <td className="py-4">{agent.agent_code}</td>
+
                       <td className="py-4">{agent.role}</td>
+
                       <td className="py-4">
-                        {agent.agent_teams?.team_name || "-"}
+                        <select
+                          value={agent.team_id || ""}
+                          onChange={(e) =>
+                            updateAgentTeam(agent.id, e.target.value)
+                          }
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+                        >
+                          <option value="">No Team</option>
+                          {teams.map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.team_name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
+
                       <td className="py-4">{agent.phone || "-"}</td>
+
                       <td className="py-4">
                         {Number(agent.commission_rate || 0)}%
                       </td>
+
+                      <td className="py-4">
+                        {Number(agent.daily_target || 0).toLocaleString()}
+                      </td>
+
+                      <td className="py-4">
+                        {Number(agent.weekly_target || 0).toLocaleString()}
+                      </td>
+
+                      <td className="py-4">
+                        {Number(agent.monthly_target || 0).toLocaleString()}
+                      </td>
+
                       <td className="py-4">{agent.status}</td>
+
                       <td className="py-4">
                         <Button
                           onClick={() => updateAgentStatus(agent)}
@@ -524,81 +701,6 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
                             ? "Deactivate"
                             : "Activate"}
                         </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="border-slate-200 bg-white shadow-sm">
-        <CardContent className="p-8">
-          <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Commissions
-          </h2>
-
-          {commissions.length === 0 ? (
-            <p className="mt-6 font-semibold text-slate-600">
-              No commissions recorded yet.
-            </p>
-          ) : (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-[950px] text-left text-sm">
-                <thead>
-                  <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-                    <th className="py-4">Agent</th>
-                    <th className="py-4">Type</th>
-                    <th className="py-4">Base</th>
-                    <th className="py-4">Rate</th>
-                    <th className="py-4">Commission</th>
-                    <th className="py-4">Status</th>
-                    <th className="py-4">Created</th>
-                    <th className="py-4">Action</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {commissions.map((commission) => (
-                    <tr key={commission.id} className="border-b">
-                      <td className="py-4 font-bold text-[#0D2D6E]">
-                        {commission.agents?.full_name || "-"}{" "}
-                        {commission.agents?.agent_code
-                          ? `(${commission.agents.agent_code})`
-                          : ""}
-                      </td>
-                      <td className="py-4">{commission.commission_type}</td>
-                      <td className="py-4">
-                        FCFA {Number(commission.base_amount || 0).toLocaleString()}
-                      </td>
-                      <td className="py-4">
-                        {Number(commission.commission_rate || 0)}%
-                      </td>
-                      <td className="py-4 font-bold">
-                        FCFA{" "}
-                        {Number(
-                          commission.commission_amount || 0
-                        ).toLocaleString()}
-                      </td>
-                      <td className="py-4">{commission.status}</td>
-                      <td className="py-4">
-                        {new Date(commission.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="py-4">
-                        {commission.status === "pending" ? (
-                          <Button
-                            onClick={() => markCommissionPaid(commission)}
-                            className="px-4 py-2"
-                          >
-                            Mark Paid
-                          </Button>
-                        ) : (
-                          <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
-                            Paid
-                          </span>
-                        )}
                       </td>
                     </tr>
                   ))}

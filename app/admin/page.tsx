@@ -13,6 +13,8 @@ import LoanModule from "./LoanModule";
 import PaymentModule from "./PaymentModule";
 import AuditLogsModule from "./AuditLogsModule";
 import AdminUsersModule from "./AdminUsersModule";
+import CommissionsModule from "./CommissionsModule";
+import CollectionsModule from "./CollectionsModule";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AgentsModule from "./AgentsModule";
@@ -106,8 +108,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="members">Members</TabsTrigger>
             <TabsTrigger value="loans">Loans</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
+            <TabsTrigger value="collections">Collections</TabsTrigger>
             <TabsTrigger value="savings">Savings</TabsTrigger>
             <TabsTrigger value="agents">Agents</TabsTrigger>
+            <TabsTrigger value="commissions">Commissions</TabsTrigger>
             <TabsTrigger value="audit">Audit Logs</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
           </TabsList>
@@ -123,11 +127,17 @@ export default function AdminDashboard() {
           <TabsContent value="payments">
             <PaymentModule currentAdmin={currentAdmin} />
           </TabsContent>
+          <TabsContent value="collections">
+  <CollectionsModule />
+</TabsContent>
     <TabsContent value="savings">
   <SavingsModule />
 </TabsContent>
  <TabsContent value="agents">
   <AgentsModule currentAdmin={currentAdmin} />
+</TabsContent>
+<TabsContent value="commissions">
+  <CommissionsModule />
 </TabsContent>
           <TabsContent value="audit">
             <AuditLogsModule currentAdmin={currentAdmin} />

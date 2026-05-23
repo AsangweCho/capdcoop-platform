@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 type Member = {
   id: string;
   full_name: string;
-  email: string;
-  member_number: string;
-total_shares?: number;
-  portfolio_value?: number;
+  email: string | null;
+  member_number: string | null;
+  total_shares: number | null;
+  portfolio_value: number | null;
+  registered_by_agent_id: string | null;
 };
 
 type Payment = {
@@ -25,6 +26,9 @@ type Payment = {
   receipt_path: string | null;
   created_at: string;
   members?: Member;
+  registered_by_agent_id: string | null;
+total_shares: number | null;
+portfolio_value: number | null;
 };
 
 interface PaymentModuleProps {
@@ -156,7 +160,7 @@ members (
             full_name,
             email,
             member_number,
-            shares,
+            total_shares,
             portfolio_value
           )
         `)
@@ -185,75 +189,128 @@ members (
     setCreatingPayment(false);
   }
 
-  async function approvePayment(payment: Payment) {
-    if (!canManagePayments) return;
+async function approvePayment(payment: Payment) {
+  if (!canManagePayments) return;
 
-    setApprovingId(payment.id);
+  setApprovingId(payment.id);
 
-    try {
-      const { error } = await supabase
-        .from("payments")
+  try {
+    const { error } = await supabase
+      .from("payments")
+      .update({
+        payment_status: "approved",
+      })
+      .eq("id", payment.id);
+
+    if (error) {
+      console.error(error);
+      setMessage("Failed to approve payment.");
+      setApprovingId("");
+      return;
+    }
+
+    const member = payment.members;
+
+    // SHARE PURCHASE LOGIC
+    if (payment.payment_type === "share_purchase" && member) {
+      const sharesBought = Math.floor(Number(payment.amount) / SHARE_PRICE);
+
+      const updatedShares =
+        Number(member.total_shares || 0) + sharesBought;
+
+      const updatedPortfolio =
+        Number(member.portfolio_value || 0) + Number(payment.amount);
+
+      const { error: memberError } = await supabase
+        .from("members")
         .update({
-          payment_status: "approved",
+          total_shares: updatedShares,
+          portfolio_value: updatedPortfolio,
         })
-        .eq("id", payment.id);
+        .eq("id", member.id);
 
-      if (error) {
-        console.error(error);
-        setMessage("Failed to approve payment.");
+      if (memberError) {
+        console.error(memberError);
+        setMessage(memberError.message);
         setApprovingId("");
         return;
       }
+    }
 
-      // SHARE PURCHASE LOGIC
-      if (payment.payment_type === "share_purchase") {
-        const member = payment.members;
+    // AGENT COMMISSION LOGIC
+    if (member?.registered_by_agent_id) {
+      const { data: existingCommission, error: existingCommissionError } =
+        await supabase
+          .from("agent_commissions")
+          .select("id")
+          .eq("payment_id", payment.id)
+          .maybeSingle();
 
-        if (member) {
-          const sharesBought = Math.floor(
-            Number(payment.amount) / SHARE_PRICE
-          );
+      if (existingCommissionError) {
+        console.error(existingCommissionError);
+      }
 
-          const updatedShares =
-            Number(member.total_shares || 0) + sharesBought;
+      if (!existingCommission) {
+        const { data: agentData, error: agentError } = await supabase
+          .from("agents")
+          .select("id, commission_rate, status")
+          .eq("id", member.registered_by_agent_id)
+          .maybeSingle();
 
-          const updatedPortfolio =
-            Number(member.portfolio_value || 0) +
-            Number(payment.amount);
+        if (agentError) {
+          console.error(agentError);
+        }
 
-          const { error: memberError } = await supabase
-            .from("members")
-         .update({
-  total_shares: updatedShares,
-  portfolio_value: updatedPortfolio,
-})
-            .eq("id", member.id);
+        if (agentData && agentData.status === "active") {
+          const rate = Number(agentData.commission_rate || 10);
+          const baseAmount = Number(payment.amount || 0);
+          const commissionAmount = baseAmount * (rate / 100);
 
-          if (memberError) {
-            console.error(memberError);
+          const { error: commissionError } = await supabase
+            .from("agent_commissions")
+            .insert({
+              agent_id: agentData.id,
+              member_id: member.id,
+              payment_id: payment.id,
+              commission_type:
+                payment.payment_type === "share_purchase"
+                  ? "share_purchase"
+                  : "registration",
+              base_amount: baseAmount,
+              commission_rate: rate,
+              commission_amount: commissionAmount,
+              status: "pending",
+            });
+
+          if (commissionError) {
+            console.error(commissionError);
+            setMessage(
+              "Payment approved, but commission could not be created."
+            );
           }
         }
       }
-
-      setPayments((prev) =>
-        prev.map((p) =>
-          p.id === payment.id
-            ? {
-                ...p,
-                payment_status: "approved",
-              }
-            : p
-        )
-      );
-
-      setMessage("Payment approved successfully.");
-    } catch (err) {
-      console.error(err);
-      setMessage("Unexpected approval error.");
     }
 
-    setApprovingId("");
+    setPayments((prev) =>
+      prev.map((p) =>
+        p.id === payment.id
+          ? {
+              ...p,
+              payment_status: "approved",
+            }
+          : p
+      )
+    );
+
+    setMessage("Payment approved successfully.");
+  } catch (err) {
+    console.error(err);
+    setMessage("Unexpected approval error.");
   }
+
+  setApprovingId("");
+}
 
 async function openReceipt(path: string) {
   const { data, error } = await supabase.storage
