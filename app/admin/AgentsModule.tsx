@@ -256,6 +256,46 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
     setMessage("Agent team updated.");
     await loadAgents();
   }
+async function createAgentLogin(agent: Agent) {
+  if (!canManageAgents) {
+    setMessage("You do not have permission to create agent logins.");
+    return;
+  }
+
+  if (!agent.email) {
+    setMessage("This agent needs an email before login can be created.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Create login account for ${agent.full_name}?`
+  );
+
+  if (!confirmed) return;
+
+  const response = await fetch("/api/create-agent-user", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      agent_id: agent.id,
+    }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    setMessage(result.error || "Could not create agent login.");
+    return;
+  }
+
+  setMessage(
+    `Agent login created. Temporary password: ${result.temporaryPassword}`
+  );
+
+  await loadAgents();
+}
 
   async function updateAgentStatus(agent: Agent) {
     const nextStatus = agent.status === "active" ? "inactive" : "active";
@@ -692,16 +732,23 @@ export default function AgentsModule({ currentAdmin }: { currentAdmin: any }) {
 
                       <td className="py-4">{agent.status}</td>
 
-                      <td className="py-4">
-                        <Button
-                          onClick={() => updateAgentStatus(agent)}
-                          className="px-4 py-2"
-                        >
-                          {agent.status === "active"
-                            ? "Deactivate"
-                            : "Activate"}
-                        </Button>
-                      </td>
+                     <td className="py-4">
+  <div className="flex flex-wrap gap-2">
+    <Button
+      onClick={() => updateAgentStatus(agent)}
+      className="px-4 py-2"
+    >
+      {agent.status === "active" ? "Deactivate" : "Activate"}
+    </Button>
+
+    <Button
+      onClick={() => createAgentLogin(agent)}
+      className="px-4 py-2 bg-[#009B5A] hover:opacity-90"
+    >
+      Create Login
+    </Button>
+  </div>
+</td>
                     </tr>
                   ))}
                 </tbody>

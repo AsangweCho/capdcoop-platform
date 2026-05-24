@@ -1,4 +1,5 @@
 "use client";
+
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -21,7 +22,7 @@ export default function LoginPage() {
     setError("");
 
     const { data, error: loginError } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim().toLowerCase(),
       password,
     });
 
@@ -38,53 +39,73 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-const { data: adminUser, error: adminError } = await supabase
-  .from("admin_users")
-  .select("role, is_active")
-  .eq("auth_user_id", user.id)
-  .eq("is_active", true)
-  .maybeSingle();
- 
-  console.log("LOGIN USER:", user.id, user.email);
-console.log("ADMIN USER:", adminUser);
-console.log("ADMIN ERROR:", adminError);
 
-if (adminError) {
-  setError(adminError.message);
-  setLoading(false);
-  return;
-}
+    const { data: adminUser, error: adminError } = await supabase
+      .from("admin_users")
+      .select("role, is_active")
+      .eq("auth_user_id", user.id)
+      .eq("is_active", true)
+      .maybeSingle();
 
-if (adminUser) {
-  router.replace("/admin");
-  return;
-}
+    if (adminError) {
+      setError(adminError.message);
+      setLoading(false);
+      return;
+    }
 
-const { data: memberData, error: memberError } = await supabase
-  .from("members")
-  .select("must_change_password")
-  .eq("auth_user_id", user.id)
-  .maybeSingle();
+    if (adminUser) {
+      router.replace("/admin");
+      return;
+    }
 
-if (memberError) {
-  setError(memberError.message);
-  setLoading(false);
-  return;
-}
+    const { data: agentData, error: agentError } = await supabase
+      .from("agents")
+      .select("id, status, must_change_password")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
 
-if (!memberData) {
-  setError("No admin or member profile found for this account.");
-  setLoading(false);
-  return;
-}
+    if (agentError) {
+      setError(agentError.message);
+      setLoading(false);
+      return;
+    }
 
-if (memberData.must_change_password) {
-  router.replace("/change-password");
-  return;
-}
+    if (agentData) {
+      if (agentData.status !== "active") {
+        setError("Your agent account is not active.");
+        setLoading(false);
+        return;
+      }
 
-router.replace("/member");
-}
+      router.replace("/agent");
+      return;
+    }
+
+    const { data: memberData, error: memberError } = await supabase
+      .from("members")
+      .select("must_change_password")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    if (memberError) {
+      setError(memberError.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!memberData) {
+      setError("No admin, agent, or member profile found for this account.");
+      setLoading(false);
+      return;
+    }
+
+    if (memberData.must_change_password) {
+      router.replace("/change-password");
+      return;
+    }
+
+    router.replace("/member");
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
@@ -100,16 +121,15 @@ router.replace("/member");
             </h1>
 
             <p className="mt-6 max-w-lg text-lg leading-8 text-white/75">
-              Access your CAPDCOOP member or administrative account securely.
-              Track membership participation, business applications, and
-              structured financial activity in one platform.
+              Access your CAPDCOOP member, agent, or administrative account
+              securely.
             </p>
           </div>
 
           <div className="flex gap-6 text-sm font-semibold text-white/60">
             <span>Secure access</span>
             <span>Member dashboard</span>
-            <span>Administrative workflow</span>
+            <span>Agent operations</span>
           </div>
         </div>
 
@@ -118,14 +138,16 @@ router.replace("/member");
             <div className="mb-8 flex justify-center lg:hidden">
               <BrandLogo compact />
             </div>
-<div className="mb-6">
-  <Link
-    href="/"
-    className="inline-flex items-center rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:opacity-90"
-  >
-    Back to Home
-  </Link>
-</div>
+
+            <div className="mb-6">
+              <Link
+                href="/"
+                className="inline-flex items-center rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:opacity-90"
+              >
+                Back to Home
+              </Link>
+            </div>
+
             <h2 className="text-center text-3xl font-black text-[var(--capd-navy)]">
               Platform Login
             </h2>
@@ -140,38 +162,37 @@ router.replace("/member");
                   Email address
                 </label>
                 <input
-                
-  id="email"
-  name="email"
-  type="email"
-  autoComplete="email"
-  required
-  value={email}
-  onChange={(event) => setEmail(event.target.value)}
-  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
-  placeholder="Enter your email"
-/>
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
+                  placeholder="Enter your email"
+                />
               </div>
 
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-700">
                   Password
                 </label>
-             <input
-  id="password"
-  name="password"
-  type="password"
-  autoComplete="current-password"
-  required
-  value={password}
-  onChange={(event) => setPassword(event.target.value)}
-  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
-  placeholder="Enter your password"
-/>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-4 outline-none focus:border-[var(--capd-navy)]"
+                  placeholder="Enter your password"
+                />
               </div>
 
               {error && (
-                <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                <div className="rounded-2xl bg-red-50 p-4 text-sm font-semibold text-red-700">
                   {error}
                 </div>
               )}
@@ -179,21 +200,11 @@ router.replace("/member");
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-2xl bg-[var(--capd-navy)] py-4 font-bold text-white hover:opacity-90 disabled:opacity-50"
+                className="w-full rounded-2xl bg-[var(--capd-navy)] px-6 py-4 font-black text-white transition hover:bg-[var(--capd-green)] disabled:opacity-60"
               >
                 {loading ? "Signing in..." : "Login"}
               </button>
             </form>
-
-            <div className="mt-8 text-center text-sm text-slate-500">
-                                   <p className="mt-6 text-center text-sm text-slate-600">
-  Not yet a member?{" "}
-  <Link href="/membership/register" className="font-bold text-[var(--capd-navy)]">
-    Create an account
-  </Link>
-</p>
-              CAPDCOOP Cooperative Platform
-            </div>
           </div>
         </div>
       </div>
