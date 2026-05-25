@@ -26,6 +26,9 @@ type Team = {
 
 type Collection = {
   id: string;
+  member_id: string | null;
+  agent_id: string | null;
+  team_id: string | null;
   collection_type: string;
   expected_amount: number;
   collected_amount: number;
@@ -36,6 +39,7 @@ type Collection = {
   notes: string | null;
   collection_date: string;
   created_at: string;
+  approved_at: string | null;
   members?: Member | null;
   agents?: Agent | null;
   agent_teams?: Team | null;
@@ -63,7 +67,12 @@ export default function CollectionsModule() {
   }, []);
 
   async function loadAll() {
-    await Promise.all([loadMembers(), loadAgents(), loadTeams(), loadCollections()]);
+    await Promise.all([
+      loadMembers(),
+      loadAgents(),
+      loadTeams(),
+      loadCollections(),
+    ]);
   }
 
   async function loadMembers() {
@@ -176,7 +185,7 @@ export default function CollectionsModule() {
       collected_amount: collected,
       payment_method: paymentMethod,
       reference: reference.trim() || null,
-      status: "recorded",
+      status: "pending",
       notes: notes.trim() || null,
     });
 
@@ -185,7 +194,7 @@ export default function CollectionsModule() {
       return;
     }
 
-    setMessage("Collection recorded successfully.");
+    setMessage("Collection recorded and sent for approval.");
     setMemberId("");
     setAgentId("");
     setTeamId("");
@@ -198,33 +207,269 @@ export default function CollectionsModule() {
     await loadCollections();
   }
 
+  async function approveCollection(collection: Collection) {
+    if (collection.status === "approved") {
+      setMessage("This collection has already been approved.");
+      return;
+    }
+
+    if (collection.status === "rejected") {
+      setMessage("Rejected collections cannot be approved.");
+      return;
+    }
+
+    const confirmed = window.confirm("Approve this collection?");
+    if (!confirmed) return;
+
+    if (collection.collection_type === "savings") {
+      const memberName = collection.members?.full_name || "Savings Client";
+      const agentName = collection.agents?.full_name || "Admin";
+      const amount = Number(collection.collected_amount || 0);
+
+      const { data: existingAccount, error: accountLoadError } = await supabase
+        .from("savings_accounts")
+        .select("id, total_saved")
+        .eq("member_id", collection.member_id)
+        .maybeSingle();
+
+      if (accountLoadError) {
+        setMessage(accountLoadError.message);
+        return;
+      }
+
+      let savingsAccountId = existingAccount?.id || null;
+
+      if (!savingsAccountId) {
+        const { data: newAccount, error: createAccountError } = await supabase
+          .from("savings_accounts")
+          .insert({
+            member_id: collection.member_id,
+            client_name: memberName,
+            account_number: `SAV-${Date.now()}`,
+            agent_name: agentName,
+            start_date: new Date().toISOString(),
+            monthly_fee_percent: 2,
+            total_saved: amount,
+            total_withdrawn: 0,
+            status: "active",
+            notes: "Created automatically from approved collection.",
+          })
+          .select("id")
+          .single();
+
+        if (createAccountError) {
+          setMessage(createAccountError.message);
+          return;
+        }
+
+        savingsAccountId = newAccount.id;
+      } else {
+        const updatedTotal = Number(existingAccount?.total_saved || 0) + amount;
+
+        const { error: updateSavingsError } = await supabase
+          .from("savings_accounts")
+          .update({
+            total_saved: updatedTotal,
+          })
+          .eq("id", savingsAccountId);
+
+        if (updateSavingsError) {
+          setMessage(updateSavingsError.message);
+          return;
+        }
+      }
+
+      const { error: transactionError } = await supabase
+        .from("savings_transactions")
+        .insert({
+          savings_account_id: savingsAccountId,
+          amount,
+          payment_method: collection.payment_method || "cash",
+          reference: collection.reference || null,
+          transaction_type: "deposit",
+          collected_by: agentName,
+        });
+
+      if (transactionError) {
+        setMessage(transactionError.message);
+        return;
+      }
+    }
+if (collection.collection_type === "share") {
+  const amount = Number(collection.collected_amount || 0);
+  const SHARE_PRICE = 10000;
+  const sharesBought = Math.floor(amount / SHARE_PRICE);
+
+  if (sharesBought > 0 && collection.member_id) {
+    const { data: memberRecord, error: memberLoadError } = await supabase
+      .from("members")
+      .select("id, total_shares, portfolio_value")
+      .eq("id", collection.member_id)
+      .single();
+
+    if (memberLoadError) {
+      setMessage(memberLoadError.message);
+      return;
+    }
+
+    const updatedShares =
+      Number(memberRecord.total_shares || 0) + sharesBought;
+
+    const updatedPortfolio =
+      Number(memberRecord.portfolio_value || 0) + amount;
+
+    const { error: memberUpdateError } = await supabase
+      .from("members")
+      .update({
+        total_shares: updatedShares,
+        portfolio_value: updatedPortfolio,
+      })
+      .eq("id", collection.member_id);
+
+    if (memberUpdateError) {
+      setMessage(memberUpdateError.message);
+      return;
+    }
+  }
+}
+
+if (collection.collection_type === "loan") {
+  const amount = Number(collection.collected_amount || 0);
+
+  if (amount <= 0) {
+    setMessage("Loan repayment amount must be greater than zero.");
+    return;
+  }
+
+  if (!collection.member_id) {
+    setMessage("This loan collection is not linked to a member.");
+    return;
+  }
+
+  const { data: activeLoan, error: loanLoadError } = await supabase
+    .from("loans")
+    .select(
+      "id, member_id, amount_repaid, outstanding_balance, total_expected_repayment, status"
+    )
+    .eq("member_id", collection.member_id)
+    .in("status", ["active", "approved", "disbursed"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (loanLoadError) {
+    setMessage(loanLoadError.message);
+    return;
+  }
+
+  if (!activeLoan) {
+    setMessage("No active loan found for this member.");
+    return;
+  }
+
+  const currentRepaid = Number(activeLoan.amount_repaid || 0);
+  const currentBalance =
+    Number(activeLoan.outstanding_balance || 0) > 0
+      ? Number(activeLoan.outstanding_balance || 0)
+      : Number(activeLoan.total_expected_repayment || 0) - currentRepaid;
+
+  const updatedRepaid = currentRepaid + amount;
+  const updatedBalance = Math.max(currentBalance - amount, 0);
+  const nextStatus = updatedBalance <= 0 ? "closed" : activeLoan.status;
+
+  const { error: loanUpdateError } = await supabase
+    .from("loans")
+    .update({
+      amount_repaid: updatedRepaid,
+      outstanding_balance: updatedBalance,
+      last_payment_date: new Date().toISOString(),
+      status: nextStatus,
+    })
+    .eq("id", activeLoan.id);
+
+  if (loanUpdateError) {
+    setMessage(loanUpdateError.message);
+    return;
+  }
+}
+
+    const { error: approveError } = await supabase
+      .from("collections")
+      .update({
+        status: "approved",
+        approved_at: new Date().toISOString(),
+      })
+      .eq("id", collection.id);
+
+    if (approveError) {
+      setMessage(approveError.message);
+      return;
+    }
+
+    setMessage("Collection approved successfully.");
+    await loadCollections();
+  }
+
+  async function rejectCollection(collection: Collection) {
+    if (collection.status === "approved") {
+      setMessage("Approved collections cannot be rejected.");
+      return;
+    }
+
+    const confirmed = window.confirm("Reject this collection?");
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from("collections")
+      .update({
+        status: "rejected",
+      })
+      .eq("id", collection.id);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage("Collection rejected.");
+    await loadCollections();
+  }
+
   const today = new Date().toISOString().slice(0, 10);
 
   const todayCollections = useMemo(() => {
     return collections.filter((item) => item.collection_date === today);
   }, [collections, today]);
 
-  const todayExpected = todayCollections.reduce(
+  const approvedTodayCollections = todayCollections.filter(
+    (item) => item.status === "approved"
+  );
+
+  const pendingCollections = collections.filter(
+    (item) => item.status === "pending"
+  );
+
+  const todayExpected = approvedTodayCollections.reduce(
     (sum, item) => sum + Number(item.expected_amount || 0),
     0
   );
 
-  const todayCollected = todayCollections.reduce(
+  const todayCollected = approvedTodayCollections.reduce(
     (sum, item) => sum + Number(item.collected_amount || 0),
     0
   );
 
   const todayVariance = todayCollected - todayExpected;
 
-  const savingsTotal = todayCollections
+  const savingsTotal = approvedTodayCollections
     .filter((item) => item.collection_type === "savings")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
-  const loanTotal = todayCollections
+  const loanTotal = approvedTodayCollections
     .filter((item) => item.collection_type === "loan")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
-  const shareTotal = todayCollections
+  const shareTotal = approvedTodayCollections
     .filter((item) => item.collection_type === "share")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
@@ -232,27 +477,31 @@ export default function CollectionsModule() {
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard
-          title="Today's Expected"
+          title="Approved Expected"
           value={`FCFA ${todayExpected.toLocaleString()}`}
         />
         <MetricCard
-          title="Today's Collected"
+          title="Approved Collected"
           value={`FCFA ${todayCollected.toLocaleString()}`}
         />
         <MetricCard
-          title="Today's Variance"
+          title="Approved Variance"
           value={`FCFA ${todayVariance.toLocaleString()}`}
         />
         <MetricCard
-          title="Savings Collected"
+          title="Pending Review"
+          value={pendingCollections.length.toString()}
+        />
+        <MetricCard
+          title="Savings Approved"
           value={`FCFA ${savingsTotal.toLocaleString()}`}
         />
         <MetricCard
-          title="Loan Collections"
+          title="Loan Approved"
           value={`FCFA ${loanTotal.toLocaleString()}`}
         />
         <MetricCard
-          title="Share Collections"
+          title="Share Approved"
           value={`FCFA ${shareTotal.toLocaleString()}`}
         />
       </div>
@@ -370,12 +619,96 @@ export default function CollectionsModule() {
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Today's Collections
+            Pending Collections
           </h2>
 
-          {todayCollections.length === 0 ? (
+          {pendingCollections.length === 0 ? (
             <p className="mt-6 font-semibold text-slate-600">
-              No collections recorded today.
+              No pending collections.
+            </p>
+          ) : (
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full min-w-[1200px] text-left text-sm">
+                <thead>
+                  <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+                    <th className="py-4">Member</th>
+                    <th className="py-4">Agent</th>
+                    <th className="py-4">Team</th>
+                    <th className="py-4">Type</th>
+                    <th className="py-4">Expected</th>
+                    <th className="py-4">Collected</th>
+                    <th className="py-4">Variance</th>
+                    <th className="py-4">Method</th>
+                    <th className="py-4">Action</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {pendingCollections.map((item) => (
+                    <tr key={item.id} className="border-b">
+                      <td className="py-4 font-bold text-[#0D2D6E]">
+                        {item.members?.full_name || "-"}
+                      </td>
+                      <td className="py-4">{item.agents?.full_name || "-"}</td>
+                      <td className="py-4">
+                        {item.agent_teams?.team_name || "-"}
+                      </td>
+                      <td className="py-4 capitalize">
+                        {item.collection_type}
+                      </td>
+                      <td className="py-4 font-bold">
+                        FCFA{" "}
+                        {Number(item.expected_amount || 0).toLocaleString()}
+                      </td>
+                      <td className="py-4 font-bold">
+                        FCFA{" "}
+                        {Number(item.collected_amount || 0).toLocaleString()}
+                      </td>
+                      <td
+                        className={
+                          Number(item.variance || 0) < 0
+                            ? "py-4 font-black text-red-600"
+                            : "py-4 font-black text-green-700"
+                        }
+                      >
+                        FCFA {Number(item.variance || 0).toLocaleString()}
+                      </td>
+                      <td className="py-4">{item.payment_method || "-"}</td>
+                      <td className="py-4">
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => approveCollection(item)}
+                            className="px-4 py-2"
+                          >
+                            Approve
+                          </Button>
+
+                          <button
+                            onClick={() => rejectCollection(item)}
+                            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200 bg-white shadow-sm">
+        <CardContent className="p-8">
+          <h2 className="text-2xl font-black text-[#0D2D6E]">
+            Today's Approved Collections
+          </h2>
+
+          {approvedTodayCollections.length === 0 ? (
+            <p className="mt-6 font-semibold text-slate-600">
+              No approved collections today.
             </p>
           ) : (
             <div className="mt-6 overflow-x-auto">
@@ -395,14 +728,12 @@ export default function CollectionsModule() {
                 </thead>
 
                 <tbody>
-                  {todayCollections.map((item) => (
+                  {approvedTodayCollections.map((item) => (
                     <tr key={item.id} className="border-b">
                       <td className="py-4 font-bold text-[#0D2D6E]">
                         {item.members?.full_name || "-"}
                       </td>
-                      <td className="py-4">
-                        {item.agents?.full_name || "-"}
-                      </td>
+                      <td className="py-4">{item.agents?.full_name || "-"}</td>
                       <td className="py-4">
                         {item.agent_teams?.team_name || "-"}
                       </td>
@@ -410,10 +741,12 @@ export default function CollectionsModule() {
                         {item.collection_type}
                       </td>
                       <td className="py-4 font-bold">
-                        FCFA {Number(item.expected_amount || 0).toLocaleString()}
+                        FCFA{" "}
+                        {Number(item.expected_amount || 0).toLocaleString()}
                       </td>
                       <td className="py-4 font-bold">
-                        FCFA {Number(item.collected_amount || 0).toLocaleString()}
+                        FCFA{" "}
+                        {Number(item.collected_amount || 0).toLocaleString()}
                       </td>
                       <td
                         className={

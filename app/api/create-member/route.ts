@@ -31,11 +31,39 @@ export async function POST(request: Request) {
     const cleanMemberNumber = String(member_number).trim();
     const cleanAgentCode = agent_code ? String(agent_code).trim() : "";
 
-    const { data: existingMember } = await supabaseAdmin
-      .from("members")
-      .select("id")
-      .or(`email.eq.${cleanEmail},member_number.eq.${cleanMemberNumber}`)
-      .maybeSingle();
+    const shares = Number(total_shares || 0);
+    const dividends = Number(declared_dividends || 0);
+
+    if (Number.isNaN(shares) || shares < 0) {
+      return NextResponse.json(
+        { error: "Total shares must be a valid number and cannot be negative." },
+        { status: 400 }
+      );
+    }
+
+    if (Number.isNaN(dividends) || dividends < 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Declared dividends must be a valid number and cannot be negative.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { data: existingMember, error: existingMemberError } =
+      await supabaseAdmin
+        .from("members")
+        .select("id")
+        .or(`email.eq.${cleanEmail},member_number.eq.${cleanMemberNumber}`)
+        .maybeSingle();
+
+    if (existingMemberError) {
+      return NextResponse.json(
+        { error: existingMemberError.message },
+        { status: 400 }
+      );
+    }
 
     if (existingMember) {
       return NextResponse.json(
@@ -46,11 +74,12 @@ export async function POST(request: Request) {
 
     let linkedAgentId: string | null = null;
     let linkedAgentName: string | null = registered_by_agent_name || null;
+    let linkedAgentCommissionRate = 10;
 
     if (cleanAgentCode) {
       const { data: agentData, error: agentError } = await supabaseAdmin
         .from("agents")
-        .select("id, full_name, agent_code, status")
+        .select("id, full_name, agent_code, commission_rate, status")
         .eq("agent_code", cleanAgentCode)
         .maybeSingle();
 
@@ -77,15 +106,7 @@ export async function POST(request: Request) {
 
       linkedAgentId = agentData.id;
       linkedAgentName = agentData.full_name;
-    }
-
-    const shares = Number(total_shares || 0);
-
-    if (Number.isNaN(shares) || shares < 0) {
-      return NextResponse.json(
-        { error: "Total shares must be a valid number and cannot be negative." },
-        { status: 400 }
-      );
+      linkedAgentCommissionRate = Number(agentData.commission_rate || 10);
     }
 
     const portfolioValue = shares * 10000;
@@ -115,15 +136,15 @@ export async function POST(request: Request) {
       .from("members")
       .insert({
         auth_user_id: authData.user.id,
-        full_name,
+        full_name: String(full_name).trim(),
         email: cleanEmail,
-        phone,
-        id_card_number,
+        phone: phone ? String(phone).trim() : null,
+        id_card_number: id_card_number ? String(id_card_number).trim() : null,
         member_number: cleanMemberNumber,
         membership_status: membership_status || "active",
         total_shares: shares,
         portfolio_value: portfolioValue,
-        declared_dividends: Number(declared_dividends || 0),
+        declared_dividends: dividends,
         must_change_password: true,
         agent_code: cleanAgentCode || null,
         registered_by_agent_name: linkedAgentName,
@@ -145,11 +166,36 @@ export async function POST(request: Request) {
       );
     }
 
+    if (linkedAgentId && shares > 0) {
+      const baseAmount = shares * 10000;
+      const commissionAmount =
+        baseAmount * (linkedAgentCommissionRate / 100);
+
+      const { error: commissionError } = await supabaseAdmin
+        .from("agent_commissions")
+        .insert({
+          agent_id: linkedAgentId,
+          member_id: memberData.id,
+          payment_id: null,
+          commission_type: "registration_share",
+          base_amount: baseAmount,
+          commission_rate: linkedAgentCommissionRate,
+          commission_amount: commissionAmount,
+          status: "pending",
+        });
+
+      if (commissionError) {
+        console.error("AGENT COMMISSION ERROR:", commissionError);
+      }
+    }
+
     return NextResponse.json({
       member: memberData,
       temporaryPassword,
     });
-  } catch {
+  } catch (error) {
+    console.error("CREATE MEMBER ERROR:", error);
+
     if (createdAuthUserId) {
       await supabaseAdmin.auth.admin.deleteUser(createdAuthUserId);
     }

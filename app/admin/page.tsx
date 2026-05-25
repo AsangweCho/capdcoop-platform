@@ -15,6 +15,7 @@ import AuditLogsModule from "./AuditLogsModule";
 import AdminUsersModule from "./AdminUsersModule";
 import CommissionsModule from "./CommissionsModule";
 import CollectionsModule from "./CollectionsModule";
+import CommandCentreModule from "./CommandCentreModule";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AgentsModule from "./AgentsModule";
@@ -112,6 +113,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="savings">Savings</TabsTrigger>
             <TabsTrigger value="agents">Agents</TabsTrigger>
             <TabsTrigger value="commissions">Commissions</TabsTrigger>
+            <TabsTrigger value="command">Command Centre</TabsTrigger>
             <TabsTrigger value="audit">Audit Logs</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
           </TabsList>
@@ -138,6 +140,9 @@ export default function AdminDashboard() {
 </TabsContent>
 <TabsContent value="commissions">
   <CommissionsModule />
+</TabsContent>
+<TabsContent value="command">
+  <CommandCentreModule />
 </TabsContent>
           <TabsContent value="audit">
             <AuditLogsModule currentAdmin={currentAdmin} />

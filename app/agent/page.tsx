@@ -99,30 +99,13 @@ export default function AgentPortal() {
       return;
     }
 
-    const { data: agentData, error: agentError } = await supabase
-      .from("agents")
-      .select(`
-        id,
-        full_name,
-        agent_code,
-        phone,
-        email,
-        role,
-        team_id,
-        commission_rate,
-        status,
-        daily_target,
-        weekly_target,
-        monthly_target,
-        agent_teams (
-          id,
-          team_name,
-          team_code,
-          region
-        )
-      `)
-      .eq("auth_user_id", userData.user.id)
-      .maybeSingle();
+  const { data: agentData, error: agentError } = await supabase
+  .from("agents")
+  .select(
+    "id, full_name, agent_code, phone, email, role, team_id, commission_rate, status, daily_target, weekly_target, monthly_target"
+  )
+  .eq("auth_user_id", userData.user.id)
+  .maybeSingle();
 
     if (agentError || !agentData) {
       console.error(agentError);
@@ -225,7 +208,7 @@ export default function AgentPortal() {
       collected_amount: collected,
       payment_method: paymentMethod,
       reference: reference.trim() || null,
-      status: "recorded",
+      status: "pending",
       notes: notes.trim() || null,
     });
 
@@ -365,8 +348,7 @@ export default function AgentPortal() {
             </h1>
 
             <p className="mt-4 max-w-2xl text-white/75">
-              Agent Code: {agent.agent_code} · Team:{" "}
-              {agent.agent_teams?.team_name || "No team assigned"} · Role:{" "}
+              Agent Code: {agent.agent_code} · Team ID: {agent.team_id || "No team assigned"}· Role:{" "}
               {agent.role}
             </p>
           </div>
