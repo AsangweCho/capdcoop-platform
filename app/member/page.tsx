@@ -71,6 +71,8 @@ type MemberLoan = {
   loan_amount: number;
   total_expected_repayment: number | null;
   daily_payment_amount: number | null;
+  amount_repaid?: number | null;
+  outstanding_balance?: number | null;
   status: string;
   start_date: string | null;
   created_at: string;
@@ -92,6 +94,12 @@ export default function MemberPortal() {
   const [member, setMember] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileMessage, setProfileMessage] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("MTN Mobile Money");
   const [paymentReference, setPaymentReference] = useState("");
@@ -101,16 +109,10 @@ export default function MemberPortal() {
 
   const [memberPayments, setMemberPayments] = useState<MemberPayment[]>([]);
   const [savingsAccounts, setSavingsAccounts] = useState<SavingsAccount[]>([]);
-  const [savingsTransactions, setSavingsTransactions] = useState<
-    SavingsTransaction[]
-  >([]);
+  const [savingsTransactions, setSavingsTransactions] = useState<SavingsTransaction[]>([]);
   const [memberLoans, setMemberLoans] = useState<MemberLoan[]>([]);
-  const [fundingApplications, setFundingApplications] = useState<
-    FundingApplication[]
-  >([]);
-  const [shareCertificates, setShareCertificates] = useState<
-    ShareCertificate[]
-  >([]);
+  const [fundingApplications, setFundingApplications] = useState<FundingApplication[]>([]);
+  const [shareCertificates, setShareCertificates] = useState<ShareCertificate[]>([]);
 
   useEffect(() => {
     loadMember();
@@ -128,9 +130,7 @@ export default function MemberPortal() {
 
     const { data, error } = await supabase
       .from("members")
-      .select(
-        "id, full_name, phone, member_number, membership_status, total_shares, portfolio_value, declared_dividends"
-      )
+      .select("id, full_name, phone, member_number, membership_status, total_shares, portfolio_value, declared_dividends")
       .eq("auth_user_id", userData.user.id)
       .single();
 
@@ -141,6 +141,8 @@ export default function MemberPortal() {
     }
 
     setMember(data);
+    setProfileName(data.full_name || "");
+    setProfilePhone(data.phone || "");
 
     const { data: paymentData, error: paymentError } = await supabase
       .from("payments")
@@ -153,9 +155,7 @@ export default function MemberPortal() {
 
     const { data: savingsData, error: savingsError } = await supabase
       .from("savings_accounts")
-      .select(
-        "id, account_number, client_name, total_saved, total_withdrawn, monthly_fee_percent, status, start_date"
-      )
+      .select("id, account_number, client_name, total_saved, total_withdrawn, monthly_fee_percent, status, start_date")
       .eq("member_id", data.id)
       .order("created_at", { ascending: false });
 
@@ -167,9 +167,7 @@ export default function MemberPortal() {
 
       const { data: savingsTxData, error: savingsTxError } = await supabase
         .from("savings_transactions")
-        .select(
-          "id, savings_account_id, amount, transaction_type, payment_method, created_at"
-        )
+        .select("id, savings_account_id, amount, transaction_type, payment_method, created_at")
         .in("savings_account_id", savingsIds)
         .order("created_at", { ascending: false });
 
@@ -181,9 +179,7 @@ export default function MemberPortal() {
 
     const { data: loansData, error: loansError } = await supabase
       .from("loans")
-      .select(
-        "id, business_name, loan_amount, total_expected_repayment, daily_payment_amount, status, start_date, created_at"
-      )
+      .select("id, business_name, loan_amount, total_expected_repayment, daily_payment_amount, amount_repaid, outstanding_balance, status, start_date, created_at")
       .eq("member_id", data.id)
       .order("created_at", { ascending: false });
 
@@ -201,9 +197,7 @@ export default function MemberPortal() {
 
     const { data: applicationData, error: applicationError } = await supabase
       .from("business_applications")
-      .select(
-        "id, business_name, business_type, requested_amount, daily_revenue_estimate, application_status, assigned_officer, review_notes, created_at"
-      )
+      .select("id, business_name, business_type, requested_amount, daily_revenue_estimate, application_status, assigned_officer, review_notes, created_at")
       .eq("member_id", data.id)
       .order("created_at", { ascending: false });
 
@@ -213,10 +207,38 @@ export default function MemberPortal() {
     setLoading(false);
   }
 
-  async function openShareCertificate(
-    certificatePath: string,
-    certificateName: string
-  ) {
+  async function updateProfile() {
+    if (!member) return;
+
+    if (!profileName.trim()) {
+      setProfileMessage("Full name is required.");
+      return;
+    }
+
+    setSavingProfile(true);
+    setProfileMessage("");
+
+    const { error } = await supabase
+      .from("members")
+      .update({
+        full_name: profileName.trim(),
+        phone: profilePhone.trim() || null,
+      })
+      .eq("id", member.id);
+
+    if (error) {
+      setProfileMessage(error.message);
+      setSavingProfile(false);
+      return;
+    }
+
+    setProfileMessage("Profile updated successfully.");
+    setEditingProfile(false);
+    setSavingProfile(false);
+    await loadMember();
+  }
+
+  async function openShareCertificate(certificatePath: string, certificateName: string) {
     const { data, error } = await supabase.storage
       .from("share-certificates")
       .createSignedUrl(certificatePath, 300, {
@@ -239,9 +261,7 @@ export default function MemberPortal() {
 
   async function submitPayment() {
     if (!member || !paymentAmount || !paymentReference || !paymentReceipt) {
-      setPaymentMessage(
-        "Please complete all payment fields and upload your receipt."
-      );
+      setPaymentMessage("Please complete all payment fields and upload your receipt.");
       return;
     }
 
@@ -286,26 +306,12 @@ export default function MemberPortal() {
   }
 
   const savingsSummary = useMemo(() => {
-    const totalSaved = savingsAccounts.reduce(
-      (sum, account) => sum + Number(account.total_saved || 0),
-      0
-    );
-
-    const totalWithdrawn = savingsAccounts.reduce(
-      (sum, account) => sum + Number(account.total_withdrawn || 0),
-      0
-    );
-
+    const totalSaved = savingsAccounts.reduce((sum, account) => sum + Number(account.total_saved || 0), 0);
+    const totalWithdrawn = savingsAccounts.reduce((sum, account) => sum + Number(account.total_withdrawn || 0), 0);
     const available = totalSaved - totalWithdrawn;
-
     const projectedDeduction = savingsAccounts.reduce((sum, account) => {
-      const accountAvailable =
-        Number(account.total_saved || 0) - Number(account.total_withdrawn || 0);
-
-      return (
-        sum +
-        accountAvailable * (Number(account.monthly_fee_percent || 2) / 100)
-      );
+      const accountAvailable = Number(account.total_saved || 0) - Number(account.total_withdrawn || 0);
+      return sum + accountAvailable * (Number(account.monthly_fee_percent || 2) / 100);
     }, 0);
 
     return {
@@ -318,27 +324,16 @@ export default function MemberPortal() {
   }, [savingsAccounts]);
 
   const loanSummary = useMemo(() => {
-    const activeLoans = memberLoans.filter((loan) => loan.status === "active");
+    const activeLoans = memberLoans.filter((loan) => ["active", "approved", "disbursed"].includes(loan.status));
 
-    const activePrincipal = activeLoans.reduce(
-      (sum, loan) => sum + Number(loan.loan_amount || 0),
-      0
-    );
-
-    const totalExpected = activeLoans.reduce(
-      (sum, loan) => sum + Number(loan.total_expected_repayment || 0),
-      0
-    );
-
-    const dailyPayment = activeLoans.reduce(
-      (sum, loan) => sum + Number(loan.daily_payment_amount || 0),
-      0
-    );
+    const activePrincipal = activeLoans.reduce((sum, loan) => sum + Number(loan.loan_amount || 0), 0);
+    const outstandingBalance = activeLoans.reduce((sum, loan) => sum + Number(loan.outstanding_balance || 0), 0);
+    const dailyPayment = activeLoans.reduce((sum, loan) => sum + Number(loan.daily_payment_amount || 0), 0);
 
     return {
       activeCount: activeLoans.length,
       activePrincipal,
-      totalExpected,
+      outstandingBalance,
       dailyPayment,
     };
   }, [memberLoans]);
@@ -352,9 +347,7 @@ export default function MemberPortal() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F8FAFC]">
-        <p className="text-lg font-semibold text-slate-600">
-          Loading member portal...
-        </p>
+        <p className="text-lg font-semibold text-slate-600">Loading member portal...</p>
       </main>
     );
   }
@@ -363,19 +356,9 @@ export default function MemberPortal() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F8FAFC] px-6">
         <div className="max-w-xl rounded-3xl bg-white p-10 text-center shadow-xl">
-          <h1 className="text-3xl font-black text-[#0D2D6E]">
-            Member record not found
-          </h1>
-
-          <p className="mt-4 text-slate-600">
-            Your login is valid, but no CAPDCOOP member record is linked to this
-            account.
-          </p>
-
-          <button
-            onClick={handleLogout}
-            className="mt-6 rounded-2xl bg-[#0D2D6E] px-6 py-3 font-bold text-white hover:opacity-90"
-          >
+          <h1 className="text-3xl font-black text-[#0D2D6E]">Member record not found</h1>
+          <p className="mt-4 text-slate-600">Your login is valid, but no CAPDCOOP member record is linked to this account.</p>
+          <button onClick={handleLogout} className="mt-6 rounded-2xl bg-[#0D2D6E] px-6 py-3 font-bold text-white hover:opacity-90">
             Return to Login
           </button>
         </div>
@@ -388,32 +371,16 @@ export default function MemberPortal() {
       <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <div className="flex min-h-screen items-center justify-center px-6">
           <div className="max-w-xl rounded-[2rem] bg-white p-10 text-center shadow-xl">
-            <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-green)]">
-              Membership Under Review
-            </p>
-
-            <h1 className="mt-4 text-3xl font-black text-[var(--capd-navy)]">
-              Your CAPDCOOP membership is pending activation.
-            </h1>
-
+            <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-green)]">Membership Under Review</p>
+            <h1 className="mt-4 text-3xl font-black text-[var(--capd-navy)]">Your CAPDCOOP membership is pending activation.</h1>
             <p className="mt-4 leading-7 text-slate-600">
-              Thank you for registering with CAPDCOOP. Our membership team is
-              reviewing your account and will contact you shortly for
-              subscription and activation.
+              Thank you for registering with CAPDCOOP. Our membership team is reviewing your account and will contact you shortly.
             </p>
-
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Link
-                href="/contact"
-                className="rounded-2xl bg-[var(--capd-navy)] px-6 py-3 font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
-              >
+              <Link href="/contact" className="rounded-2xl bg-[var(--capd-navy)] px-6 py-3 font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]">
                 Contact Us
               </Link>
-
-              <button
-                onClick={handleLogout}
-                className="rounded-2xl border border-slate-300 bg-white px-6 py-3 font-bold text-[var(--capd-navy)] transition-all duration-300 hover:border-[var(--capd-green)] hover:text-[var(--capd-green)]"
-              >
+              <button onClick={handleLogout} className="rounded-2xl border border-slate-300 bg-white px-6 py-3 font-bold text-[var(--capd-navy)] transition-all duration-300 hover:border-[var(--capd-green)] hover:text-[var(--capd-green)]">
                 Logout
               </button>
             </div>
@@ -424,58 +391,14 @@ export default function MemberPortal() {
   }
 
   const metrics = [
-    {
-      title: "Total Shares Held",
-      value: member.total_shares.toLocaleString(),
-      note: "Approved allocations",
-      icon: PieChart,
-    },
-    {
-      title: "Share Portfolio Value",
-      value: `FCFA ${Number(member.portfolio_value).toLocaleString()}`,
-      note: "Current records",
-      icon: WalletCards,
-    },
-    {
-      title: "Declared Dividends",
-      value: `FCFA ${Number(member.declared_dividends).toLocaleString()}`,
-      note: "Official declarations only",
-      icon: BadgeDollarSign,
-    },
-    {
-      title: "Savings Balance",
-      value: `FCFA ${Number(savingsSummary.available).toLocaleString()}`,
-      note: `Net after 2%: FCFA ${Number(
-        savingsSummary.netAfterDeduction
-      ).toLocaleString()}`,
-      icon: PiggyBank,
-    },
-    {
-      title: "Active Loans",
-      value: `FCFA ${Number(loanSummary.activePrincipal).toLocaleString()}`,
-      note: `${loanSummary.activeCount} active loan(s)`,
-      icon: HandCoins,
-    },
-    {
-      title: "Pending Payments",
-      value: `FCFA ${Number(pendingPaymentsTotal).toLocaleString()}`,
-      note: "Awaiting admin validation",
-      icon: ReceiptText,
-    },
-    {
-      title: "Monthly Deduction",
-      value: `FCFA ${Number(
-        savingsSummary.projectedDeduction
-      ).toLocaleString()}`,
-      note: "Projected savings fee",
-      icon: TrendingDown,
-    },
-    {
-      title: "Membership Status",
-      value: member.membership_status,
-      note: member.member_number,
-      icon: LayoutDashboard,
-    },
+    { title: "Total Shares Held", value: member.total_shares.toLocaleString(), note: "Approved allocations", icon: PieChart },
+    { title: "Share Portfolio Value", value: `FCFA ${Number(member.portfolio_value).toLocaleString()}`, note: "Current records", icon: WalletCards },
+    { title: "Declared Dividends", value: `FCFA ${Number(member.declared_dividends).toLocaleString()}`, note: "Official declarations only", icon: BadgeDollarSign },
+    { title: "Savings Balance", value: `FCFA ${Number(savingsSummary.available).toLocaleString()}`, note: `Net after 2%: FCFA ${Number(savingsSummary.netAfterDeduction).toLocaleString()}`, icon: PiggyBank },
+    { title: "Active Loans", value: `FCFA ${Number(loanSummary.outstandingBalance || loanSummary.activePrincipal).toLocaleString()}`, note: `${loanSummary.activeCount} active loan(s)`, icon: HandCoins },
+    { title: "Pending Payments", value: `FCFA ${Number(pendingPaymentsTotal).toLocaleString()}`, note: "Awaiting admin validation", icon: ReceiptText },
+    { title: "Monthly Deduction", value: `FCFA ${Number(savingsSummary.projectedDeduction).toLocaleString()}`, note: "Projected savings fee", icon: TrendingDown },
+    { title: "Membership Status", value: member.membership_status, note: member.member_number, icon: LayoutDashboard },
   ];
 
   return (
@@ -484,24 +407,21 @@ export default function MemberPortal() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <BrandLogo />
-            <div className="hidden border-l border-slate-200 pl-4 text-sm font-bold text-slate-500 md:block">
-              Member Portal
-            </div>
+            <div className="hidden border-l border-slate-200 pl-4 text-sm font-bold text-slate-500 md:block">Member Portal</div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button className="px-5 py-3">Buy More Shares</Button>
 
             <Link href="/apply">
-              <Button className="px-5 py-3 bg-[var(--capd-green)] hover:opacity-90">
-                Apply for Funding
-              </Button>
+              <Button className="px-5 py-3 bg-[var(--capd-green)] hover:opacity-90">Apply for Funding</Button>
             </Link>
 
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
-            >
+            <Link href="/change-password">
+              <Button className="px-5 py-3 bg-[#0D2D6E] hover:opacity-90">Change Password</Button>
+            </Link>
+
+            <button onClick={handleLogout} className="inline-flex items-center rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50">
               <LogOut size={18} className="mr-2" />
               Logout
             </button>
@@ -513,22 +433,62 @@ export default function MemberPortal() {
         <div className="relative overflow-hidden rounded-[2rem] bg-[var(--capd-navy)] p-8 text-white shadow-sm">
           <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10" />
           <div className="absolute -bottom-24 right-20 h-72 w-72 rounded-full bg-[var(--capd-green)]/20" />
-
           <div className="relative">
-            <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-gold)]">
-              Member Dashboard
-            </p>
-
-            <h1 className="mt-3 text-4xl font-black">
-              Welcome back, {member.full_name}
-            </h1>
-
-            <p className="mt-4 max-w-2xl text-white/75">
-              Track your shares, savings, funding applications, payments, and
-              cooperative records.
-            </p>
+            <p className="text-sm font-black uppercase tracking-widest text-[var(--capd-gold)]">Member Dashboard</p>
+            <h1 className="mt-3 text-4xl font-black">Welcome back, {member.full_name}</h1>
+            <p className="mt-4 max-w-2xl text-white/75">Track your shares, savings, funding applications, payments, and cooperative records.</p>
           </div>
         </div>
+
+        <Card className="mt-8 border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-8">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black text-[var(--capd-navy)]">My Profile</h2>
+                <p className="mt-2 text-sm text-slate-600">Manage your basic member information and account security.</p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Link href="/change-password">
+                  <Button className="px-5 py-3 bg-[#0D2D6E] hover:opacity-90">Change Password</Button>
+                </Link>
+
+                <button
+                  onClick={() => {
+                    setEditingProfile(!editingProfile);
+                    setProfileMessage("");
+                    setProfileName(member.full_name || "");
+                    setProfilePhone(member.phone || "");
+                  }}
+                  className="rounded-2xl bg-[var(--capd-navy)] px-5 py-3 text-sm font-bold text-white hover:bg-[var(--capd-green)]"
+                >
+                  {editingProfile ? "Cancel Edit" : "Edit Profile"}
+                </button>
+              </div>
+            </div>
+
+            {!editingProfile ? (
+              <div className="mt-6 grid gap-5 md:grid-cols-4">
+                <InfoBlock label="Name" value={member.full_name} />
+                <InfoBlock label="Phone" value={member.phone || "-"} />
+                <InfoBlock label="Member Number" value={member.member_number} />
+                <InfoBlock label="Status" value={member.membership_status} highlight />
+              </div>
+            ) : (
+              <div className="mt-6 grid gap-5 md:grid-cols-2">
+                <input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Full name" />
+                <input value={profilePhone} onChange={(event) => setProfilePhone(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Phone number" />
+                <Button onClick={updateProfile} disabled={savingProfile} className="px-6 py-3 md:w-fit">
+                  {savingProfile ? "Saving..." : "Save Profile"}
+                </Button>
+              </div>
+            )}
+
+            {profileMessage && (
+              <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-700">{profileMessage}</div>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {metrics.map(({ title, value, note, icon: Icon }) => (
@@ -537,12 +497,9 @@ export default function MemberPortal() {
                 <div className="flex items-start justify-between gap-5">
                   <div>
                     <p className="text-sm font-bold text-slate-500">{title}</p>
-                    <p className="mt-3 text-2xl font-black capitalize text-[#0D2D6E]">
-                      {value}
-                    </p>
+                    <p className="mt-3 text-2xl font-black capitalize text-[#0D2D6E]">{value}</p>
                     <p className="mt-2 text-xs text-slate-500">{note}</p>
                   </div>
-
                   <div className="rounded-2xl bg-[var(--capd-navy)]/10 p-3 text-[var(--capd-navy)]">
                     <Icon size={23} />
                   </div>
@@ -554,116 +511,44 @@ export default function MemberPortal() {
 
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
-            <h2 className="text-2xl font-black text-[var(--capd-navy)]">
-              My Savings
-            </h2>
-
-            <p className="mt-2 text-sm text-slate-600">
-              View your daily savings balance, projected deduction, and recent
-              savings deposits.
-            </p>
+            <h2 className="text-2xl font-black text-[var(--capd-navy)]">My Savings</h2>
+            <p className="mt-2 text-sm text-slate-600">View your daily savings balance, projected deduction, and recent savings deposits.</p>
 
             {savingsAccounts.length === 0 ? (
-              <p className="mt-6 font-semibold text-slate-600">
-                Savings Balance: FCFA 0. You do not have an active savings
-                account yet.
-              </p>
+              <p className="mt-6 font-semibold text-slate-600">Savings Balance: FCFA 0. You do not have an active savings account yet.</p>
             ) : (
               <div className="mt-6 space-y-6">
                 {savingsAccounts.map((account) => {
                   const totalSaved = Number(account.total_saved || 0);
                   const totalWithdrawn = Number(account.total_withdrawn || 0);
                   const available = totalSaved - totalWithdrawn;
-                  const deduction =
-                    available *
-                    (Number(account.monthly_fee_percent || 2) / 100);
+                  const deduction = available * (Number(account.monthly_fee_percent || 2) / 100);
                   const netWithdrawal = available - deduction;
 
                   return (
-                    <div
-                      key={account.id}
-                      className="rounded-3xl border border-slate-200 bg-slate-50 p-6"
-                    >
+                    <div key={account.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-6">
                       <div className="grid gap-5 md:grid-cols-4">
-                        <div>
-                          <p className="text-xs font-bold uppercase text-slate-500">
-                            Account
-                          </p>
-                          <p className="mt-2 font-black text-[#0D2D6E]">
-                            {account.account_number || "Savings Account"}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs font-bold uppercase text-slate-500">
-                            Total Saved
-                          </p>
-                          <p className="mt-2 font-black text-[#0D2D6E]">
-                            FCFA {totalSaved.toLocaleString()}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs font-bold uppercase text-slate-500">
-                            Available Balance
-                          </p>
-                          <p className="mt-2 font-black text-[#0D2D6E]">
-                            FCFA {available.toLocaleString()}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs font-bold uppercase text-slate-500">
-                            Net After Deduction
-                          </p>
-                          <p className="mt-2 font-black text-[#009B5A]">
-                            FCFA {netWithdrawal.toLocaleString()}
-                          </p>
-                        </div>
+                        <InfoBlock label="Account" value={account.account_number || "Savings Account"} />
+                        <InfoBlock label="Total Saved" value={`FCFA ${totalSaved.toLocaleString()}`} />
+                        <InfoBlock label="Available Balance" value={`FCFA ${available.toLocaleString()}`} />
+                        <InfoBlock label="Net After Deduction" value={`FCFA ${netWithdrawal.toLocaleString()}`} highlight />
                       </div>
-
                       <div className="mt-5 rounded-2xl bg-white p-4 text-sm font-semibold text-slate-600">
-                        Deduction: FCFA {deduction.toLocaleString()} · Status:{" "}
-                        {account.status}
+                        Deduction: FCFA {deduction.toLocaleString()} · Status: {account.status}
                       </div>
                     </div>
                   );
                 })}
 
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[650px] text-left text-sm">
-                    <thead>
-                      <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-                        <th className="py-4">Type</th>
-                        <th className="py-4">Amount</th>
-                        <th className="py-4">Method</th>
-                        <th className="py-4">Date</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {savingsTransactions.slice(0, 10).map((tx) => (
-                        <tr key={tx.id} className="border-b">
-                          <td className="py-4 font-bold text-[#0D2D6E]">
-                            {tx.transaction_type}
-                          </td>
-
-                          <td className="py-4 font-bold">
-                            FCFA {Number(tx.amount).toLocaleString()}
-                          </td>
-
-                          <td className="py-4 text-slate-600">
-                            {tx.payment_method}
-                          </td>
-
-                          <td className="py-4 text-slate-600">
-                            {new Date(tx.created_at).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SimpleTable
+                  headers={["Type", "Amount", "Method", "Date"]}
+                  rows={savingsTransactions.slice(0, 10).map((tx) => [
+                    tx.transaction_type,
+                    `FCFA ${Number(tx.amount).toLocaleString()}`,
+                    tx.payment_method,
+                    new Date(tx.created_at).toLocaleDateString(),
+                  ])}
+                />
               </div>
             )}
           </CardContent>
@@ -671,84 +556,35 @@ export default function MemberPortal() {
 
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
-            <h2 className="text-2xl font-black text-[var(--capd-navy)]">
-              My Active Loans
-            </h2>
+            <h2 className="text-2xl font-black text-[var(--capd-navy)]">My Loans</h2>
 
             {memberLoans.length === 0 ? (
-              <p className="mt-6 font-semibold text-slate-600">
-                Active Loans: FCFA 0. You do not have any loan record yet.
-              </p>
+              <p className="mt-6 font-semibold text-slate-600">Active Loans: FCFA 0. You do not have any loan record yet.</p>
             ) : (
-              <div className="mt-6 overflow-x-auto">
-                <table className="w-full min-w-[850px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-                      <th className="py-4">Business</th>
-                      <th className="py-4">Principal</th>
-                      <th className="py-4">Expected Repayment</th>
-                      <th className="py-4">Daily Payment</th>
-                      <th className="py-4">Status</th>
-                      <th className="py-4">Date</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {memberLoans.map((loan) => (
-                      <tr key={loan.id} className="border-b">
-                        <td className="py-4 font-bold text-[#0D2D6E]">
-                          {loan.business_name || "-"}
-                        </td>
-
-                        <td className="py-4 font-bold">
-                          FCFA {Number(loan.loan_amount || 0).toLocaleString()}
-                        </td>
-
-                        <td className="py-4 font-bold">
-                          FCFA{" "}
-                          {Number(
-                            loan.total_expected_repayment || 0
-                          ).toLocaleString()}
-                        </td>
-
-                        <td className="py-4 font-bold">
-                          FCFA{" "}
-                          {Number(loan.daily_payment_amount || 0).toLocaleString(
-                            undefined,
-                            { maximumFractionDigits: 0 }
-                          )}
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {loan.status || "-"}
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {new Date(loan.created_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SimpleTable
+                headers={["Business", "Principal", "Expected", "Repaid", "Balance", "Daily", "Status", "Date"]}
+                rows={memberLoans.map((loan) => [
+                  loan.business_name || "-",
+                  `FCFA ${Number(loan.loan_amount || 0).toLocaleString()}`,
+                  `FCFA ${Number(loan.total_expected_repayment || 0).toLocaleString()}`,
+                  `FCFA ${Number(loan.amount_repaid || 0).toLocaleString()}`,
+                  `FCFA ${Number(loan.outstanding_balance || 0).toLocaleString()}`,
+                  `FCFA ${Number(loan.daily_payment_amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+                  loan.status || "-",
+                  new Date(loan.created_at).toLocaleDateString(),
+                ])}
+              />
             )}
           </CardContent>
         </Card>
 
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
-            <h2 className="text-2xl font-black text-[var(--capd-navy)]">
-              My Share Certificates
-            </h2>
-
-            <p className="mt-2 text-sm text-slate-600">
-              View and download your official CAPDCOOP share certificates.
-            </p>
+            <h2 className="text-2xl font-black text-[var(--capd-navy)]">My Share Certificates</h2>
+            <p className="mt-2 text-sm text-slate-600">View and download your official CAPDCOOP share certificates.</p>
 
             {shareCertificates.length === 0 ? (
-              <p className="mt-6 font-semibold text-slate-600">
-                No share certificates have been uploaded yet.
-              </p>
+              <p className="mt-6 font-semibold text-slate-600">No share certificates have been uploaded yet.</p>
             ) : (
               <div className="mt-6 overflow-x-auto">
                 <table className="w-full min-w-[650px] text-left text-sm">
@@ -759,26 +595,14 @@ export default function MemberPortal() {
                       <th className="py-4">Action</th>
                     </tr>
                   </thead>
-
                   <tbody>
                     {shareCertificates.map((certificate) => (
                       <tr key={certificate.id} className="border-b">
-                        <td className="py-4 font-bold text-[var(--capd-navy)]">
-                          {certificate.certificate_name}
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {new Date(certificate.created_at).toLocaleDateString()}
-                        </td>
-
+                        <td className="py-4 font-bold text-[var(--capd-navy)]">{certificate.certificate_name}</td>
+                        <td className="py-4 text-slate-600">{new Date(certificate.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
                           <button
-                            onClick={() =>
-                              openShareCertificate(
-                                certificate.certificate_path,
-                                certificate.certificate_name
-                              )
-                            }
+                            onClick={() => openShareCertificate(certificate.certificate_path, certificate.certificate_name)}
                             className="inline-block rounded-2xl bg-[var(--capd-navy)] px-5 py-2 text-sm font-bold text-white transition-all duration-300 hover:bg-[var(--capd-green)]"
                           >
                             Download Share Certificate
@@ -795,63 +619,25 @@ export default function MemberPortal() {
 
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
-            <h2 className="text-2xl font-black text-[var(--capd-navy)]">
-              Submit Share Payment
-            </h2>
-
-            <p className="mt-2 text-sm text-slate-600">
-              Submit your membership or share subscription payment for admin
-              validation.
-            </p>
+            <h2 className="text-2xl font-black text-[var(--capd-navy)]">Submit Share Payment</h2>
+            <p className="mt-2 text-sm text-slate-600">Submit your membership or share subscription payment for admin validation.</p>
 
             <div className="mt-6 grid gap-5 md:grid-cols-3">
-              <input
-                value={paymentAmount}
-                onChange={(event) => setPaymentAmount(event.target.value)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
-                placeholder="Amount paid"
-              />
-
-              <select
-                value={paymentMethod}
-                onChange={(event) => setPaymentMethod(event.target.value)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
-              >
+              <input value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Amount paid" />
+              <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none">
                 <option>MTN Mobile Money</option>
                 <option>Orange Money</option>
                 <option>Bank Transfer</option>
                 <option>Card Payment</option>
                 <option>USDT</option>
               </select>
-
-              <input
-                value={paymentReference}
-                onChange={(event) => setPaymentReference(event.target.value)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
-                placeholder="Transaction reference"
-              />
-
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(event) =>
-                  setPaymentReceipt(event.target.files?.[0] || null)
-                }
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
-              />
+              <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Transaction reference" />
+              <input type="file" accept="image/*,.pdf" onChange={(event) => setPaymentReceipt(event.target.files?.[0] || null)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" />
             </div>
 
-            {paymentMessage && (
-              <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-700">
-                {paymentMessage}
-              </div>
-            )}
+            {paymentMessage && <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-700">{paymentMessage}</div>}
 
-            <Button
-              onClick={submitPayment}
-              disabled={submittingPayment}
-              className="mt-6 px-6 py-3"
-            >
+            <Button onClick={submitPayment} disabled={submittingPayment} className="mt-6 px-6 py-3">
               {submittingPayment ? "Submitting..." : "Submit Payment"}
             </Button>
           </CardContent>
@@ -859,62 +645,20 @@ export default function MemberPortal() {
 
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
-            <h2 className="text-2xl font-black text-[var(--capd-navy)]">
-              Payment History
-            </h2>
-
+            <h2 className="text-2xl font-black text-[var(--capd-navy)]">Payment History</h2>
             {memberPayments.length === 0 ? (
-              <p className="mt-6 font-semibold text-slate-600">
-                Pending Payments: FCFA 0. No payment history yet.
-              </p>
+              <p className="mt-6 font-semibold text-slate-600">Pending Payments: FCFA 0. No payment history yet.</p>
             ) : (
-              <div className="mt-6 overflow-x-auto">
-                <table className="w-full min-w-[750px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-                      <th className="py-4">Amount</th>
-                      <th className="py-4">Method</th>
-                      <th className="py-4">Reference</th>
-                      <th className="py-4">Status</th>
-                      <th className="py-4">Date</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {memberPayments.map((payment) => (
-                      <tr key={payment.id} className="border-b">
-                        <td className="py-4 font-bold">
-                          FCFA {Number(payment.amount).toLocaleString()}
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {payment.payment_method}
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {payment.reference}
-                        </td>
-
-                        <td className="py-4">
-                          <span
-                            className={
-                              payment.payment_status === "approved"
-                                ? "rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700"
-                                : "rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700"
-                            }
-                          >
-                            {payment.payment_status}
-                          </span>
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {new Date(payment.created_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SimpleTable
+                headers={["Amount", "Method", "Reference", "Status", "Date"]}
+                rows={memberPayments.map((payment) => [
+                  `FCFA ${Number(payment.amount).toLocaleString()}`,
+                  payment.payment_method,
+                  payment.reference,
+                  payment.payment_status,
+                  new Date(payment.created_at).toLocaleDateString(),
+                ])}
+              />
             )}
           </CardContent>
         </Card>
@@ -923,89 +667,90 @@ export default function MemberPortal() {
           <CardContent className="p-8">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-black text-[#0D2D6E]">
-                  My Funding Applications
-                </h2>
-
-                <p className="mt-2 text-sm text-slate-600">
-                  Track your business funding requests and review progress.
-                </p>
+                <h2 className="text-2xl font-black text-[#0D2D6E]">My Funding Applications</h2>
+                <p className="mt-2 text-sm text-slate-600">Track your business funding requests and review progress.</p>
               </div>
-
               <Link href="/apply">
-                <Button className="px-5 py-3 bg-[var(--capd-green)] hover:opacity-90">
-                  New Application
-                </Button>
+                <Button className="px-5 py-3 bg-[var(--capd-green)] hover:opacity-90">New Application</Button>
               </Link>
             </div>
 
             {fundingApplications.length === 0 ? (
-              <p className="mt-6 font-semibold text-slate-600">
-                You have not submitted any funding applications yet.
-              </p>
+              <p className="mt-6 font-semibold text-slate-600">You have not submitted any funding applications yet.</p>
             ) : (
-              <div className="mt-6 overflow-x-auto">
-                <table className="w-full min-w-[850px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-                      <th className="py-4">Business</th>
-                      <th className="py-4">Type</th>
-                      <th className="py-4">Requested</th>
-                      <th className="py-4">Daily Revenue</th>
-                      <th className="py-4">Status</th>
-                      <th className="py-4">Officer</th>
-                      <th className="py-4">Date</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {fundingApplications.map((application) => (
-                      <tr key={application.id} className="border-b">
-                        <td className="py-4 font-bold text-[#0D2D6E]">
-                          {application.business_name}
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {application.business_type}
-                        </td>
-
-                        <td className="py-4 font-bold">
-                          FCFA{" "}
-                          {Number(application.requested_amount).toLocaleString()}
-                        </td>
-
-                        <td className="py-4 font-bold">
-                          FCFA{" "}
-                          {Number(
-                            application.daily_revenue_estimate
-                          ).toLocaleString()}
-                        </td>
-
-                        <td className="py-4">
-                          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
-                            {application.application_status.replaceAll(
-                              "_",
-                              " "
-                            )}
-                          </span>
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {application.assigned_officer || "Not assigned"}
-                        </td>
-
-                        <td className="py-4 text-slate-600">
-                          {new Date(application.created_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SimpleTable
+                headers={["Business", "Type", "Requested", "Daily Revenue", "Status", "Officer", "Date"]}
+                rows={fundingApplications.map((application) => [
+                  application.business_name,
+                  application.business_type,
+                  `FCFA ${Number(application.requested_amount).toLocaleString()}`,
+                  `FCFA ${Number(application.daily_revenue_estimate).toLocaleString()}`,
+                  application.application_status.replaceAll("_", " "),
+                  application.assigned_officer || "Not assigned",
+                  new Date(application.created_at).toLocaleDateString(),
+                ])}
+              />
             )}
           </CardContent>
         </Card>
       </section>
     </main>
+  );
+}
+
+function InfoBlock({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
+      <p className={highlight ? "mt-2 font-black capitalize text-[#009B5A]" : "mt-2 font-black text-[#0D2D6E]"}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SimpleTable({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: string[][];
+}) {
+  return (
+    <div className="mt-6 overflow-x-auto">
+      <table className="w-full min-w-[750px] text-left text-sm">
+        <thead>
+          <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+            {headers.map((header) => (
+              <th key={header} className="py-4">
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={index} className="border-b">
+              {row.map((cell, cellIndex) => (
+                <td
+                  key={`${index}-${cellIndex}`}
+                  className={cellIndex === 0 ? "py-4 font-bold text-[#0D2D6E]" : "py-4 text-slate-600"}
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -13,16 +13,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
 
     setLoading(true);
     setError("");
+    setMessage("");
+
+    const cleanEmail = email.trim().toLowerCase();
 
     const { data, error: loginError } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       password,
     });
 
@@ -77,6 +82,11 @@ export default function LoginPage() {
         return;
       }
 
+      if (agentData.must_change_password) {
+        router.replace("/change-password");
+        return;
+      }
+
       router.replace("/agent");
       return;
     }
@@ -107,13 +117,41 @@ export default function LoginPage() {
     router.replace("/member");
   }
 
+  async function handleForgotPassword() {
+    setError("");
+    setMessage("");
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail) {
+      setError("Enter your email address first, then click forgot password.");
+      return;
+    }
+
+    setResetting(true);
+
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+      cleanEmail,
+      {
+        redirectTo: `${window.location.origin}/change-password`,
+      }
+    );
+
+    if (resetError) {
+      setError(resetError.message);
+      setResetting(false);
+      return;
+    }
+
+    setMessage("Password reset link sent. Please check your email.");
+    setResetting(false);
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
       <div className="grid min-h-screen lg:grid-cols-2">
         <div className="hidden bg-[var(--capd-navy)] lg:flex lg:flex-col lg:justify-between lg:p-12">
-          <div>
-            <BrandLogo white horizontal={false} />
-          </div>
+          <BrandLogo white horizontal={false} />
 
           <div>
             <h1 className="max-w-xl text-5xl font-black leading-tight text-white">
@@ -197,6 +235,12 @@ export default function LoginPage() {
                 </div>
               )}
 
+              {message && (
+                <div className="rounded-2xl bg-green-50 p-4 text-sm font-semibold text-green-700">
+                  {message}
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={loading}
@@ -205,6 +249,23 @@ export default function LoginPage() {
                 {loading ? "Signing in..." : "Login"}
               </button>
             </form>
+
+            <div className="mt-6 flex flex-col gap-3 text-center text-sm font-bold">
+              <button
+                onClick={handleForgotPassword}
+                disabled={resetting}
+                className="text-[var(--capd-navy)] hover:text-[var(--capd-green)] disabled:opacity-60"
+              >
+                {resetting ? "Sending reset link..." : "Forgot password?"}
+              </button>
+
+              <Link
+                href="/membership/register"
+                className="text-[var(--capd-green)] hover:text-[var(--capd-navy)]"
+              >
+                Create a member account
+              </Link>
+            </div>
           </div>
         </div>
       </div>
