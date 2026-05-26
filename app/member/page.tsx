@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import BrandLogo from "@/components/BrandLogo";
 import Link from "next/link";
 
+
 type Member = {
   id: string;
   full_name: string;
@@ -27,6 +28,19 @@ type Member = {
   total_shares: number;
   portfolio_value: number;
   declared_dividends: number;
+};
+
+type PaymentMethodDetail = {
+  id: string;
+  method_name: string;
+  display_name: string;
+  account_name: string | null;
+  account_number: string | null;
+  bank_name: string | null;
+  branch_name: string | null;
+  phone_number: string | null;
+  wallet_provider: string | null;
+  instructions: string | null;
 };
 
 type ShareCertificate = {
@@ -106,6 +120,9 @@ export default function MemberPortal() {
   const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [paymentMethodDetails, setPaymentMethodDetails] = useState<
+  PaymentMethodDetail[]
+>([]);
 
   const [memberPayments, setMemberPayments] = useState<MemberPayment[]>([]);
   const [savingsAccounts, setSavingsAccounts] = useState<SavingsAccount[]>([]);
@@ -133,6 +150,17 @@ export default function MemberPortal() {
       .select("id, full_name, phone, member_number, membership_status, total_shares, portfolio_value, declared_dividends")
       .eq("auth_user_id", userData.user.id)
       .single();
+
+const { data: paymentMethodData, error: paymentMethodError } = await supabase
+  .from("payment_method_details")
+  .select(
+    "id, method_name, display_name, account_name, account_number, bank_name, branch_name, phone_number, wallet_provider, instructions"
+  )
+  .eq("is_active", true)
+  .order("display_name", { ascending: true });
+
+if (paymentMethodError) console.error(paymentMethodError);
+setPaymentMethodDetails(paymentMethodData || []);
 
     if (error || !data) {
       console.error(error);
@@ -401,6 +429,10 @@ export default function MemberPortal() {
     { title: "Membership Status", value: member.membership_status, note: member.member_number, icon: LayoutDashboard },
   ];
 
+const selectedPaymentDetails = paymentMethodDetails.find(
+  (method) => method.method_name === paymentMethod
+);
+
   return (
     <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <header className="border-b bg-white">
@@ -624,16 +656,112 @@ export default function MemberPortal() {
 
             <div className="mt-6 grid gap-5 md:grid-cols-3">
               <input value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Amount paid" />
-              <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none">
-                <option>MTN Mobile Money</option>
-                <option>Orange Money</option>
-                <option>Bank Transfer</option>
-                <option>Card Payment</option>
-                <option>USDT</option>
-              </select>
+              <select
+  value={paymentMethod}
+  onChange={(event) => setPaymentMethod(event.target.value)}
+  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+>
+  {paymentMethodDetails.length === 0 ? (
+    <>
+      <option>MTN Mobile Money</option>
+      <option>Orange Money</option>
+      <option>Bank Transfer</option>
+      <option>Cash</option>
+      <option>USDT</option>
+    </>
+  ) : (
+    paymentMethodDetails.map((method) => (
+      <option key={method.id} value={method.method_name}>
+        {method.display_name}
+      </option>
+    ))
+  )}
+</select>
               <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Transaction reference" />
               <input type="file" accept="image/*,.pdf" onChange={(event) => setPaymentReceipt(event.target.files?.[0] || null)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" />
             </div>
+
+            {selectedPaymentDetails && (
+  <div className="mt-6 rounded-3xl border border-[#0D2D6E]/10 bg-slate-50 p-6">
+    <h3 className="text-xl font-black text-[#0D2D6E]">
+      {selectedPaymentDetails.display_name} Details
+    </h3>
+
+    <div className="mt-5 grid gap-4 md:grid-cols-2">
+      {selectedPaymentDetails.account_name && (
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Account Name
+          </p>
+          <p className="mt-1 font-black text-slate-800">
+            {selectedPaymentDetails.account_name}
+          </p>
+        </div>
+      )}
+
+      {selectedPaymentDetails.phone_number && (
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Phone Number
+          </p>
+          <p className="mt-1 font-black text-slate-800">
+            {selectedPaymentDetails.phone_number}
+          </p>
+        </div>
+      )}
+
+      {selectedPaymentDetails.account_number && (
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Account / Wallet
+          </p>
+          <p className="mt-1 break-all font-black text-slate-800">
+            {selectedPaymentDetails.account_number}
+          </p>
+        </div>
+      )}
+
+      {selectedPaymentDetails.bank_name && (
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Bank Name
+          </p>
+          <p className="mt-1 font-black text-slate-800">
+            {selectedPaymentDetails.bank_name}
+          </p>
+        </div>
+      )}
+
+      {selectedPaymentDetails.branch_name && (
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Branch
+          </p>
+          <p className="mt-1 font-black text-slate-800">
+            {selectedPaymentDetails.branch_name}
+          </p>
+        </div>
+      )}
+
+      {selectedPaymentDetails.wallet_provider && (
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Provider / Network
+          </p>
+          <p className="mt-1 font-black text-slate-800">
+            {selectedPaymentDetails.wallet_provider}
+          </p>
+        </div>
+      )}
+    </div>
+
+    {selectedPaymentDetails.instructions && (
+      <div className="mt-5 rounded-2xl bg-white p-4 text-sm font-semibold leading-6 text-slate-700">
+        {selectedPaymentDetails.instructions}
+      </div>
+    )}
+  </div>
+)}
 
             {paymentMessage && <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-700">{paymentMessage}</div>}
 
