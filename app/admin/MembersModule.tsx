@@ -49,6 +49,10 @@ export default function MembersModule({ currentAdmin }: { currentAdmin: any }) {
   const [savingMember, setSavingMember] = useState(false);
   const [uploadingCertificateFor, setUploadingCertificateFor] = useState("");
 
+  const pendingMembers = members.filter(
+  (member) => member.membership_status === "pending"
+);
+
   const canManageMembers =
     currentAdmin?.role === "super_admin" ||
     currentAdmin?.role === "admin" ||
@@ -303,6 +307,33 @@ export default function MembersModule({ currentAdmin }: { currentAdmin: any }) {
     }
   }
 
+async function approvePendingMember(member: MemberRecord) {
+  if (!canManageMembers) {
+    setMemberMessage("You do not have permission to approve members.");
+    return;
+  }
+
+  const confirmed = window.confirm(`Approve ${member.full_name} as an active member?`);
+  if (!confirmed) return;
+
+  const { error } = await supabase
+    .from("members")
+    .update({
+      membership_status: "active",
+      must_change_password: true,
+    })
+    .eq("id", member.id);
+
+  if (error) {
+    setMemberMessage(error.message);
+    return;
+  }
+
+  setMemberMessage("Member approved successfully.");
+  await loadMembers();
+}
+
+
   async function deleteShareCertificate(
     certificateId: string,
     certificatePath: string
@@ -346,6 +377,9 @@ export default function MembersModule({ currentAdmin }: { currentAdmin: any }) {
             <p className="mt-2 text-sm text-slate-600">
               Create members, assign agent attribution, and manage cooperative records.
             </p>
+            <p className="text-sm font-bold text-amber-700">
+  Pending membership applications: {pendingMembers.length}
+</p>
           </div>
 
           <div className="rounded-2xl bg-[#0D2D6E]/10 px-4 py-2 text-sm font-bold text-[#0D2D6E]">
@@ -667,6 +701,14 @@ export default function MembersModule({ currentAdmin }: { currentAdmin: any }) {
                           No access
                         </span>
                       )}
+                      {member.membership_status === "pending" && (
+  <Button
+    onClick={() => approvePendingMember(member)}
+    className="px-4 py-2 bg-[#009B5A] hover:opacity-90"
+  >
+    Approve
+  </Button>
+)}
                     </td>
 
                     <td className="py-4">
