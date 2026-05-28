@@ -352,7 +352,7 @@ if (collection.collection_type === "loan") {
       "id, member_id, amount_repaid, outstanding_balance, total_expected_repayment, status"
     )
     .eq("member_id", collection.member_id)
-    .in("status", ["active", "approved", "disbursed"])
+    .eq("status", "active")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -375,7 +375,7 @@ if (collection.collection_type === "loan") {
 
   const updatedRepaid = currentRepaid + amount;
   const updatedBalance = Math.max(currentBalance - amount, 0);
-  const nextStatus = updatedBalance <= 0 ? "closed" : activeLoan.status;
+  const nextStatus = updatedBalance <= 0 ? "closed" : "active";
 
   const { error: loanUpdateError } = await supabase
     .from("loans")
@@ -390,6 +390,59 @@ if (collection.collection_type === "loan") {
   if (loanUpdateError) {
     setMessage(loanUpdateError.message);
     return;
+  }
+
+  let remainingPayment = amount;
+
+  const { data: scheduleRows, error: scheduleLoadError } = await supabase
+    .from("loan_repayment_schedule")
+    .select("id, expected_amount, paid_amount, arrears_amount, status, due_date")
+    .eq("loan_id", activeLoan.id)
+    .in("status", ["pending", "partial", "overdue"])
+    .order("due_date", { ascending: true });
+
+  if (scheduleLoadError) {
+    setMessage(scheduleLoadError.message);
+    return;
+  }
+
+  for (const row of scheduleRows || []) {
+    if (remainingPayment <= 0) break;
+
+    const expected = Number(row.expected_amount || 0);
+    const alreadyPaid = Number(row.paid_amount || 0);
+    const outstandingForRow = Math.max(expected - alreadyPaid, 0);
+
+    if (outstandingForRow <= 0) continue;
+
+    const amountApplied = Math.min(remainingPayment, outstandingForRow);
+    const newPaidAmount = alreadyPaid + amountApplied;
+    const newArrearsAmount = Math.max(expected - newPaidAmount, 0);
+
+    let newStatus = "partial";
+
+    if (newArrearsAmount <= 0) {
+      newStatus = "paid";
+    } else if (new Date(row.due_date) < new Date()) {
+      newStatus = "overdue";
+    }
+
+    const { error: scheduleUpdateError } = await supabase
+      .from("loan_repayment_schedule")
+      .update({
+        paid_amount: newPaidAmount,
+        arrears_amount: newArrearsAmount,
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+
+    if (scheduleUpdateError) {
+      setMessage(scheduleUpdateError.message);
+      return;
+    }
+
+    remainingPayment -= amountApplied;
   }
 }
 
