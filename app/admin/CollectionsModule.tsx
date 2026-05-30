@@ -61,6 +61,12 @@ export default function CollectionsModule() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+const [statusFilter, setStatusFilter] = useState("all");
+const [typeFilter, setTypeFilter] = useState("all");
+const [dateFilter, setDateFilter] = useState(
+  new Date().toISOString().slice(0, 10)
+);
 
   useEffect(() => {
     loadAll();
@@ -501,7 +507,45 @@ if (collection.collection_type === "loan") {
   const pendingCollections = collections.filter(
     (item) => item.status === "pending"
   );
+const filteredCollections = useMemo(() => {
+  return collections.filter((item) => {
+    const search = searchTerm.toLowerCase();
 
+    const matchesSearch =
+      !search ||
+      item.members?.full_name?.toLowerCase().includes(search) ||
+      item.members?.member_number?.toLowerCase().includes(search) ||
+      item.agents?.full_name?.toLowerCase().includes(search) ||
+      item.agents?.agent_code?.toLowerCase().includes(search) ||
+      item.reference?.toLowerCase().includes(search);
+
+    const matchesStatus =
+      statusFilter === "all" || item.status === statusFilter;
+
+    const matchesType =
+      typeFilter === "all" || item.collection_type === typeFilter;
+
+    const matchesDate =
+      !dateFilter || item.collection_date === dateFilter;
+
+    return matchesSearch && matchesStatus && matchesType && matchesDate;
+  });
+}, [collections, searchTerm, statusFilter, typeFilter, dateFilter]);
+
+const filteredPendingCollections = filteredCollections.filter(
+  (item) => item.status === "pending"
+);
+
+const filteredApprovedCollections = filteredCollections.filter(
+  (item) => item.status === "approved"
+);
+
+function resetCollectionFilters() {
+  setSearchTerm("");
+  setStatusFilter("all");
+  setTypeFilter("all");
+  setDateFilter(new Date().toISOString().slice(0, 10));
+}
   const todayExpected = approvedTodayCollections.reduce(
     (sum, item) => sum + Number(item.expected_amount || 0),
     0
@@ -565,6 +609,62 @@ if (collection.collection_type === "loan") {
         </div>
       )}
 
+<Card className="border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h2 className="text-2xl font-black text-[#0D2D6E]">
+          Collections Search & Filters
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Search and filter collections by member, agent, type, status, and date.
+        </p>
+      </div>
+
+      <Button onClick={resetCollectionFilters} className="px-5 py-3">
+        Reset Filters
+      </Button>
+    </div>
+
+    <div className="mt-6 grid gap-5 md:grid-cols-4">
+      <input
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        placeholder="Search member, agent, code, reference"
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none md:col-span-2"
+      />
+
+      <select
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+      >
+        <option value="all">All Status</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+
+      <select
+        value={typeFilter}
+        onChange={(e) => setTypeFilter(e.target.value)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+      >
+        <option value="all">All Types</option>
+        <option value="savings">Savings</option>
+        <option value="loan">Loan Repayment</option>
+        <option value="share">Share Subscription</option>
+      </select>
+
+      <input
+        type="date"
+        value={dateFilter}
+        onChange={(e) => setDateFilter(e.target.value)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+      />
+    </div>
+  </CardContent>
+</Card>
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
@@ -675,7 +775,7 @@ if (collection.collection_type === "loan") {
             Pending Collections
           </h2>
 
-          {pendingCollections.length === 0 ? (
+          {filteredPendingCollections.length === 0 ? (
             <p className="mt-6 font-semibold text-slate-600">
               No pending collections.
             </p>
@@ -697,7 +797,7 @@ if (collection.collection_type === "loan") {
                 </thead>
 
                 <tbody>
-                  {pendingCollections.map((item) => (
+                  {filteredPendingCollections.map((item) => (
                     <tr key={item.id} className="border-b">
                       <td className="py-4 font-bold text-[#0D2D6E]">
                         {item.members?.full_name || "-"}
@@ -759,7 +859,7 @@ if (collection.collection_type === "loan") {
             Today's Approved Collections
           </h2>
 
-          {approvedTodayCollections.length === 0 ? (
+          {filteredApprovedCollections.length === 0 ? (
             <p className="mt-6 font-semibold text-slate-600">
               No approved collections today.
             </p>
