@@ -198,11 +198,27 @@ const [selectedLoanId, setSelectedLoanId] = useState("");
 
     const computed = calculateLoan(principal, durationDays);
 
-    setCreatingLoan(true);
-    setMessage("");
+setCreatingLoan(true);
+setMessage("");
 
-    const { error } = await supabase.from("loans").insert({
-      member_id: newLoan.member_id,
+const { count, error: countError } = await supabase
+  .from("loans")
+  .select("id", { count: "exact", head: true });
+
+if (countError) {
+  setMessage(countError.message);
+  setCreatingLoan(false);
+  return;
+}
+
+const nextLoanNumber = `CAPD-LOAN-${String((count || 0) + 1).padStart(
+  5,
+  "0"
+)}`;
+
+const { error } = await supabase.from("loans").insert({
+  loan_number: nextLoanNumber,
+  member_id: newLoan.member_id,
       business_name: newLoan.business_name.trim() || null,
       loan_amount: principal,
       duration_days: durationDays,
