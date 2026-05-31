@@ -43,11 +43,15 @@ export default function MembersModule({ currentAdmin }: { currentAdmin: any }) {
   const [newAgentCode, setNewAgentCode] = useState("");
   const [newAgentName, setNewAgentName] = useState("");
 
+
   const [memberMessage, setMemberMessage] = useState("");
   const [creatingMember, setCreatingMember] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberRecord | null>(null);
   const [savingMember, setSavingMember] = useState(false);
   const [uploadingCertificateFor, setUploadingCertificateFor] = useState("");
+
+  const [memberSearch, setMemberSearch] = useState("");
+const [selectedMemberId, setSelectedMemberId] = useState("");
 
   const pendingMembers = members.filter(
   (member) => member.membership_status === "pending"
@@ -125,13 +129,12 @@ export default function MembersModule({ currentAdmin }: { currentAdmin: any }) {
       return "Initial shares must be a valid number and cannot be negative.";
     }
 
-    if (Number.isNaN(dividends) || dividends < 0) {
-      return "Declared dividends must be a valid number and cannot be negative.";
-    }
+ if (Number.isNaN(dividends) || dividends < 0) {
+  return "Declared dividends must be a valid number and cannot be negative.";
+}
 
-    return "";
-  }
-
+return "";
+}
   async function createMember() {
     if (!canManageMembers) {
       setMemberMessage("You do not have permission to create members.");
@@ -365,6 +368,19 @@ async function approvePendingMember(member: MemberRecord) {
       setMemberMessage(error.message || "Failed to delete certificate.");
     }
   }
+const filteredMemberOptions = members.filter((member) => {
+  const search = memberSearch.toLowerCase();
+
+  return (
+    member.full_name?.toLowerCase().includes(search) ||
+    member.member_number?.toLowerCase().includes(search) ||
+    member.phone?.toLowerCase().includes(search) ||
+    member.email?.toLowerCase().includes(search)
+  );
+});
+
+const selectedMember =
+  members.find((member) => member.id === selectedMemberId) || null;
 
   return (
     <Card className="mt-6 border-slate-200 bg-white shadow-sm">
@@ -386,7 +402,102 @@ async function approvePendingMember(member: MemberRecord) {
             {members.length} members
           </div>
         </div>
+<Card className="mt-6 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <h3 className="text-2xl font-black text-[#0D2D6E]">
+      Member Lookup Workspace
+    </h3>
 
+    <p className="mt-2 text-sm text-slate-600">
+      Search and manage a member without scrolling through the full register.
+    </p>
+
+    <div className="mt-6 grid gap-5 md:grid-cols-2">
+      <input
+        value={memberSearch}
+        onChange={(e) => setMemberSearch(e.target.value)}
+        placeholder="Search member name, number, phone or email"
+        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+      />
+
+      <select
+        value={selectedMemberId}
+        onChange={(e) => setSelectedMemberId(e.target.value)}
+        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+      >
+        <option value="">Select Member</option>
+
+        {filteredMemberOptions.map((member) => (
+          <option key={member.id} value={member.id}>
+            {member.full_name} ({member.member_number || "No Number"})
+          </option>
+        ))}
+      </select>
+    </div>
+
+    {selectedMember && (
+      <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-6">
+        <div className="grid gap-5 md:grid-cols-4">
+          <InfoBlock label="Name" value={selectedMember.full_name} />
+          <InfoBlock
+            label="Member Number"
+            value={selectedMember.member_number || "-"}
+          />
+          <InfoBlock
+            label="Phone"
+            value={selectedMember.phone || "-"}
+          />
+          <InfoBlock
+            label="Status"
+            value={selectedMember.membership_status || "-"}
+          />
+
+          <InfoBlock
+            label="Email"
+            value={selectedMember.email || "-"}
+          />
+
+          <InfoBlock
+            label="Shares"
+            value={String(selectedMember.total_shares || 0)}
+          />
+
+          <InfoBlock
+            label="Portfolio"
+            value={`FCFA ${Number(
+              selectedMember.portfolio_value || 0
+            ).toLocaleString()}`}
+          />
+
+          <InfoBlock
+            label="Dividends"
+            value={`FCFA ${Number(
+              selectedMember.declared_dividends || 0
+            ).toLocaleString()}`}
+          />
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button
+            onClick={() => startEditMember(selectedMember)}
+            className="px-5 py-3"
+          >
+            Edit Member
+          </Button>
+
+          {selectedMember.membership_status === "pending" && (
+            <Button
+              onClick={() => approvePendingMember(selectedMember)}
+              className="px-5 py-3 bg-[#009B5A]"
+            >
+              Approve Member
+            </Button>
+          )}
+        </div>
+      </div>
+    )}
+  </CardContent>
+</Card>
         {canManageMembers && (
           <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-6">
             <h3 className="text-xl font-black text-[#0D2D6E]">
@@ -481,6 +592,7 @@ async function approvePendingMember(member: MemberRecord) {
             >
               {creatingMember ? "Creating..." : "Create Member"}
             </Button>
+            
           </div>
         )}
 
@@ -764,5 +876,24 @@ async function approvePendingMember(member: MemberRecord) {
         )}
       </CardContent>
     </Card>
+  );
+}
+function InfoBlock({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-bold uppercase text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-2 font-black text-[#0D2D6E]">
+        {value}
+      </p>
+    </div>
   );
 }
