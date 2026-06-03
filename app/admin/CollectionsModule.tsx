@@ -63,6 +63,9 @@ export default function CollectionsModule() {
   const [notes, setNotes] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 const [statusFilter, setStatusFilter] = useState("all");
+const [collectionDate, setCollectionDate] = useState(
+  new Date().toISOString().slice(0, 10)
+);
 const [typeFilter, setTypeFilter] = useState("all");
 const [dateFilter, setDateFilter] = useState(
   new Date().toISOString().slice(0, 10)
@@ -193,12 +196,14 @@ const [dateFilter, setDateFilter] = useState(
       reference: reference.trim() || null,
       status: "pending",
       notes: notes.trim() || null,
+      collection_date: collectionDate,
     });
 
     if (error) {
       setMessage(error.message);
       return;
     }
+setCollectionDate(new Date().toISOString().slice(0, 10));
 
     setMessage("Collection recorded and sent for approval.");
     setMemberId("");
@@ -210,6 +215,7 @@ const [dateFilter, setDateFilter] = useState(
     setPaymentMethod("cash");
     setReference("");
     setNotes("");
+    
     await loadCollections();
   }
 
@@ -736,6 +742,12 @@ function resetCollectionFilters() {
               placeholder="Collected amount"
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
             />
+            <input
+  type="date"
+  value={collectionDate}
+  onChange={(e) => setCollectionDate(e.target.value)}
+  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+/>
 
             <select
               value={paymentMethod}

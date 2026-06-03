@@ -13,6 +13,8 @@ type Member = {
   total_shares: number | null;
   portfolio_value: number | null;
   registered_by_agent_id: string | null;
+  agent_code: string | null;
+  registered_by_agent_name: string | null;
 };
 
 type Payment = {
@@ -238,59 +240,85 @@ async function approvePayment(payment: Payment) {
     }
 
     // AGENT COMMISSION LOGIC
-    if (member?.registered_by_agent_id) {
-      const { data: existingCommission, error: existingCommissionError } =
-        await supabase
-          .from("agent_commissions")
-          .select("id")
-          .eq("payment_id", payment.id)
-          .maybeSingle();
+let commissionAgentId = member?.registered_by_agent_id || null;
 
-      if (existingCommissionError) {
-        console.error(existingCommissionError);
-      }
+if (!commissionAgentId && member?.agent_code) {
+  const { data: agentByCode, error: agentByCodeError } = await supabase
+    .from("agents")
+    .select("id")
+    .eq("agent_code", member.agent_code)
+    .eq("status", "active")
+    .maybeSingle();
 
-      if (!existingCommission) {
-        const { data: agentData, error: agentError } = await supabase
-          .from("agents")
-          .select("id, commission_rate, status")
-          .eq("id", member.registered_by_agent_id)
-          .maybeSingle();
+  if (agentByCodeError) {
+    console.error(agentByCodeError);
+  }
 
-        if (agentError) {
-          console.error(agentError);
-        }
+  if (agentByCode?.id) {
+    commissionAgentId = agentByCode.id;
 
-        if (agentData && agentData.status === "active") {
-          const rate = Number(agentData.commission_rate || 10);
-          const baseAmount = Number(payment.amount || 0);
-          const commissionAmount = baseAmount * (rate / 100);
+    await supabase
+      .from("members")
+      .update({
+        registered_by_agent_id: agentByCode.id,
+      })
+      .eq("id", member.id);
+  }
+}
 
-          const { error: commissionError } = await supabase
-            .from("agent_commissions")
-            .insert({
-              agent_id: agentData.id,
-              member_id: member.id,
-              payment_id: payment.id,
-              commission_type:
-                payment.payment_type === "share_purchase"
-                  ? "share_purchase"
-                  : "registration",
-              base_amount: baseAmount,
-              commission_rate: rate,
-              commission_amount: commissionAmount,
-              status: "pending",
-            });
+if (commissionAgentId && member) {
+  const { data: existingCommission, error: existingCommissionError } =
+    await supabase
+      .from("agent_commissions")
+      .select("id")
+      .eq("payment_id", payment.id)
+      .maybeSingle();
 
-          if (commissionError) {
-            console.error(commissionError);
-            setMessage(
-              "Payment approved, but commission could not be created."
-            );
-          }
-        }
+  if (existingCommissionError) {
+    console.error(existingCommissionError);
+  }
+
+  if (!existingCommission) {
+    const { data: agentData, error: agentError } = await supabase
+      .from("agents")
+      .select("id, commission_rate, status")
+      .eq("id", commissionAgentId)
+      .maybeSingle();
+
+    if (agentError) {
+      console.error(agentError);
+    }
+
+    if (agentData && agentData.status === "active") {
+      const rate = Number(agentData.commission_rate || 10);
+      const baseAmount = Number(payment.amount || 0);
+      const commissionAmount = baseAmount * (rate / 100);
+
+      const { error: commissionError } = await supabase
+        .from("agent_commissions")
+        .insert({
+          agent_id: agentData.id,
+          member_id: member.id,
+          payment_id: payment.id,
+          commission_type:
+            payment.payment_type === "share_purchase"
+              ? "share_purchase"
+              : "registration",
+          base_amount: baseAmount,
+          commission_rate: rate,
+          commission_amount: commissionAmount,
+          status: "pending",
+        });
+
+      if (commissionError) {
+        console.error(commissionError);
+        setMessage(
+          "Payment approved, but commission could not be created."
+        );
       }
     }
+  }
+}
 
     setPayments((prev) =>
       prev.map((p) =>
