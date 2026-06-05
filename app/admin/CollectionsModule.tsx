@@ -75,6 +75,37 @@ type Collection = {
   agents?: Agent | null;
   agent_teams?: Team | null;
 };
+
+type ExpectedAidCollection = {
+  schedule_id: string;
+  aid_facility_id: string;
+  member_id: string | null;
+  member_name: string | null;
+  member_number: string | null;
+  business_name: string | null;
+  installment_number: number;
+  due_date: string;
+  expected_amount: number;
+  paid_amount: number;
+  arrears_amount: number;
+  amount_due: number;
+  repayment_status: string;
+  aid_status: string;
+  aid_number: string | null;
+  outstanding_balance: number | null;
+  daily_repayment_amount: number | null;
+};
+
+type AidPortfolioSummary = {
+  active_aid_count: number;
+  pending_aid_count: number;
+  closed_aid_count: number;
+  total_aid_amount: number;
+  total_expected_repayment: number;
+  total_amount_repaid: number;
+  active_outstanding_balance: number;
+};
+
 type PendingLoanDue = {
   id: string;
   loan_id: string;
@@ -197,6 +228,17 @@ export default function CollectionsModule() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(today);
 
+  const [expectedAidCollectionsToday, setExpectedAidCollectionsToday] = useState<
+  ExpectedAidCollection[]
+>([]);
+
+const [overdueAidCollections, setOverdueAidCollections] = useState<
+  ExpectedAidCollection[]
+>([]);
+
+const [aidPortfolioSummary, setAidPortfolioSummary] =
+  useState<AidPortfolioSummary | null>(null);
+
   const [todayPendingLoanDues, setTodayPendingLoanDues] = useState<
   PendingLoanDue[]
 >([]);
@@ -213,7 +255,9 @@ export default function CollectionsModule() {
   loadAgents(),
   loadTeams(),
   loadCollections(),
-  loadTodayPendingLoanDues(),
+  loadExpectedAidCollectionsToday(),
+  loadOverdueAidCollections(),
+  loadAidPortfolioSummary(),
 ]);
 
     setIsLoading(false);
@@ -389,6 +433,52 @@ async function loadTodayPendingLoanDues() {
     setCollectionDate(getLocalDateString());
   }
 
+async function loadExpectedAidCollectionsToday() {
+  const { data, error } = await supabase
+    .from("v_expected_aid_collections_today")
+    .select("*")
+    .order("due_date", { ascending: true });
+
+  if (error) {
+    setMessage(error.message);
+    setExpectedAidCollectionsToday([]);
+    return;
+  }
+
+  setExpectedAidCollectionsToday((data as ExpectedAidCollection[]) || []);
+}
+
+async function loadOverdueAidCollections() {
+  const { data, error } = await supabase
+    .from("v_overdue_aid_collections")
+    .select("*")
+    .order("due_date", { ascending: true });
+
+  if (error) {
+    setMessage(error.message);
+    setOverdueAidCollections([]);
+    return;
+  }
+
+  setOverdueAidCollections((data as ExpectedAidCollection[]) || []);
+}
+
+async function loadAidPortfolioSummary() {
+  const { data, error } = await supabase
+    .from("v_aid_portfolio_summary")
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    setMessage(error.message);
+    setAidPortfolioSummary(null);
+    return;
+  }
+
+  setAidPortfolioSummary(data as AidPortfolioSummary | null);
+}
+
+
   async function recordCollection() {
     setMessage("");
 
@@ -444,10 +534,13 @@ async function loadTodayPendingLoanDues() {
 
     await loadCollections();
 
-    await Promise.all([
+await Promise.all([
   loadCollections(),
-  loadTodayPendingLoanDues(),
+  loadExpectedAidCollectionsToday(),
+  loadOverdueAidCollections(),
+  loadAidPortfolioSummary(),
 ]);
+
   }
 
   async function approveCollection(collection: Collection) {
@@ -897,9 +990,52 @@ const allApprovedCount = allApprovedCollections.length;
     .filter((item) => item.collection_type === "share")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
+
+      const expectedAidTodayCount = expectedAidCollectionsToday.length;
+
+  const expectedAidTodayAmount = expectedAidCollectionsToday.reduce(
+    (sum, item) => sum + Number(item.amount_due || 0),
+    0
+  );
+
+  const overdueAidCount = overdueAidCollections.length;
+
+  const overdueAidAmount = overdueAidCollections.reduce(
+    (sum, item) => sum + Number(item.amount_due || 0),
+    0
+  );
   return (
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
+<MetricCard
+  title="Aid Collections Due Today"
+  value={expectedAidTodayCount.toString()}
+/>
+
+<MetricCard
+  title="Aid Amount Due Today"
+  value={formatMoney(expectedAidTodayAmount)}
+/>
+
+<MetricCard
+  title="Overdue Aid Collections"
+  value={overdueAidCount.toString()}
+/>
+
+<MetricCard
+  title="Overdue Aid Amount"
+  value={formatMoney(overdueAidAmount)}
+/>
+
+<MetricCard
+  title="Active Aid Facilities"
+  value={String(aidPortfolioSummary?.active_aid_count || 0)}
+/>
+
+<MetricCard
+  title="Active Outstanding Aid"
+  value={formatMoney(aidPortfolioSummary?.active_outstanding_balance || 0)}
+/>
         <MetricCard
           title="Yesterday Approved Expected"
           value={formatMoney(yesterdayExpected)}
@@ -1054,6 +1190,52 @@ const allApprovedCount = allApprovedCollections.length;
         </CardContent>
       </Card>
 
+     <Card className="border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <div className="flex flex-wrap items-center gap-3">
+      <h2 className="text-2xl font-black text-[#0D2D6E]">
+        Today&apos;s Aid Collections Due
+      </h2>
+
+      <span className="rounded-full bg-blue-50 px-4 py-2 text-sm font-black text-blue-700">
+        {expectedAidTodayCount}
+      </span>
+    </div>
+
+    <p className="mt-2 text-sm font-semibold text-slate-500">
+      Expected aid repayments due today from active aid facilities.
+    </p>
+
+    <ExpectedAidCollectionsTable
+      items={expectedAidCollectionsToday}
+      emptyText="No aid collections are due today."
+    />
+  </CardContent>
+</Card>
+
+<Card className="border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <div className="flex flex-wrap items-center gap-3">
+      <h2 className="text-2xl font-black text-[#0D2D6E]">
+        Overdue Aid Collections
+      </h2>
+
+      <span className="rounded-full bg-red-50 px-4 py-2 text-sm font-black text-red-700">
+        {overdueAidCount}
+      </span>
+    </div>
+
+    <p className="mt-2 text-sm font-semibold text-slate-500">
+      Aid repayments that are overdue and still pending or partially paid.
+    </p>
+
+    <ExpectedAidCollectionsTable
+      items={overdueAidCollections}
+      emptyText="No overdue aid collections."
+    />
+  </CardContent>
+</Card> 
+
       <Card className="border-slate-200 bg-white shadow-sm">
   <CardContent className="p-8">
     <div className="flex flex-wrap items-center gap-3">
@@ -1101,6 +1283,7 @@ Today&apos;s Loan Collections Due      </h2>
               const memberRecord = Array.isArray(row.loan?.members)
                 ? row.loan?.members[0]
                 : row.loan?.members;
+
 
               return (
                 <tr key={row.id} className="border-b">
@@ -1470,6 +1653,87 @@ function SmallMetricCard({ title, value }: { title: string; value: string }) {
     </div>
   );
 }
+function ExpectedAidCollectionsTable({
+  items,
+  emptyText,
+}: {
+  items: ExpectedAidCollection[];
+  emptyText: string;
+}) {
+  if (items.length === 0) {
+    return <p className="mt-6 font-semibold text-slate-600">{emptyText}</p>;
+  }
+
+  return (
+    <div className="mt-6 overflow-x-auto">
+      <table className="w-full min-w-[1100px] text-left text-sm">
+        <thead>
+          <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+            <th className="py-4">Member</th>
+            <th className="py-4">Business</th>
+            <th className="py-4">Aid No.</th>
+            <th className="py-4">Installment</th>
+            <th className="py-4">Due Date</th>
+            <th className="py-4">Expected</th>
+            <th className="py-4">Paid</th>
+            <th className="py-4">Amount Due</th>
+            <th className="py-4">Outstanding Aid</th>
+            <th className="py-4">Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.schedule_id} className="border-b">
+              <td className="py-4 font-bold text-[#0D2D6E]">
+                {item.member_name || "-"}
+                <br />
+                <span className="text-xs font-semibold text-slate-500">
+                  {item.member_number || ""}
+                </span>
+              </td>
+
+              <td className="py-4">{item.business_name || "-"}</td>
+
+              <td className="py-4 font-semibold">
+                {item.aid_number || "-"}
+              </td>
+
+              <td className="py-4 font-bold">
+                #{item.installment_number}
+              </td>
+
+              <td className="py-4">{item.due_date}</td>
+
+              <td className="py-4 font-bold">
+                {formatMoney(item.expected_amount)}
+              </td>
+
+              <td className="py-4 font-bold">
+                {formatMoney(item.paid_amount)}
+              </td>
+
+              <td className="py-4 font-black text-red-600">
+                {formatMoney(item.amount_due)}
+              </td>
+
+              <td className="py-4 font-bold text-[#0D2D6E]">
+                {formatMoney(item.outstanding_balance)}
+              </td>
+
+              <td className="py-4 capitalize">
+                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
+                  {item.repayment_status}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function MetricCard({ title, value }: { title: string; value: string }) {
   return (
     <div className="rounded-3xl bg-white p-6 shadow-sm">
