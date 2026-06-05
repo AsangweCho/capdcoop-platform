@@ -13,6 +13,7 @@ type MemberOption = {
 
 type Loan = {
   id: string;
+  loan_number?: string | null;
   member_id: string | null;
   business_name: string | null;
   loan_amount: number;
@@ -31,7 +32,14 @@ type Loan = {
   approved_at: string | null;
   disbursed_at: string | null;
   last_payment_date: string | null;
+  rejected_at?: string | null;
   rejection_reason: string | null;
+  is_deleted?: boolean | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  edit_reason?: string | null;
   members?:
     | {
         full_name: string;
@@ -52,9 +60,49 @@ type NewLoanState = {
   purpose: string;
 };
 
+type EditLoanState = {
+  member_id: string;
+  business_name: string;
+  loan_amount: string;
+  duration_days: string;
+  purpose: string;
+  status: string;
+  reason: string;
+};
+
+type RepaymentScheduleRow = {
+  id: string;
+  loan_id: string;
+  member_id: string | null;
+  installment_number: number;
+  due_date: string;
+  expected_amount: number;
+  paid_amount: number | null;
+  arrears_amount: number | null;
+  status: string;
+};
+
 const INSURANCE_RATE = 0.025;
 const REGISTRATION_FEE = 5000;
 const INTEREST_RATE_PER_30_DAYS = 0.03;
+
+const emptyNewLoan: NewLoanState = {
+  member_id: "",
+  business_name: "",
+  loan_amount: "",
+  duration_days: "",
+  purpose: "",
+};
+
+const emptyEditLoan: EditLoanState = {
+  member_id: "",
+  business_name: "",
+  loan_amount: "",
+  duration_days: "",
+  purpose: "",
+  status: "pending",
+  reason: "",
+};
 
 export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
   const [members, setMembers] = useState<MemberOption[]>([]);
@@ -62,21 +110,28 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
   const [loadingLoans, setLoadingLoans] = useState(true);
   const [creatingLoan, setCreatingLoan] = useState(false);
   const [message, setMessage] = useState("");
-  const [selectedLoanSchedule, setSelectedLoanSchedule] = useState<any[]>([]);
-const [selectedLoanId, setSelectedLoanId] = useState("");
 
-  const [newLoan, setNewLoan] = useState<NewLoanState>({
-    member_id: "",
-    business_name: "",
-    loan_amount: "",
-    duration_days: "",
-    purpose: "",
-  });
+  const [selectedLoanSchedule, setSelectedLoanSchedule] = useState<
+    RepaymentScheduleRow[]
+  >([]);
+  const [selectedLoanId, setSelectedLoanId] = useState("");
 
-  const canManageLoans =
-    currentAdmin?.role === "super_admin" ||
-    currentAdmin?.role === "admin" ||
-    currentAdmin?.role === "finance";
+  const [actionLoanId, setActionLoanId] = useState<string | null>(null);
+  const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
+  const [editLoan, setEditLoan] = useState<EditLoanState>(emptyEditLoan);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [newLoan, setNewLoan] = useState<NewLoanState>(emptyNewLoan);
+
+  const adminRole = String(currentAdmin?.role || "")
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+
+  const isSuperAdmin = adminRole === "super_admin";
+
+  const canManageLoans = ["super_admin", "admin", "finance"].includes(
+    adminRole
+  );
 
   function calculateLoan(principalInput: number, durationInput: number) {
     const principal = Number(principalInput || 0);
@@ -111,6 +166,18 @@ const [selectedLoanId, setSelectedLoanId] = useState("");
     );
   }, [newLoan.loan_amount, newLoan.duration_days]);
 
+  const editPreview = useMemo(() => {
+    return calculateLoan(
+      Number(editLoan.loan_amount || 0),
+      Number(editLoan.duration_days || 0)
+    );
+  }, [editLoan.loan_amount, editLoan.duration_days]);
+
+  useEffect(() => {
+    loadMembers();
+    loadLoans();
+  }, []);
+
   async function loadMembers() {
     const { data, error } = await supabase
       .from("members")
@@ -131,13 +198,16 @@ const [selectedLoanId, setSelectedLoanId] = useState("");
 
     const { data, error } = await supabase
       .from("loans")
-      .select(`
+      .select(
+        `
         *,
         members (
           full_name,
           member_number
         )
-      `)
+      `
+      )
+      .or("is_deleted.is.null,is_deleted.eq.false")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -150,11 +220,6 @@ const [selectedLoanId, setSelectedLoanId] = useState("");
     setLoans((data as unknown as Loan[]) || []);
     setLoadingLoans(false);
   }
-
-  useEffect(() => {
-    loadMembers();
-    loadLoans();
-  }, []);
 
   function getMemberName(loan: Loan) {
     if (Array.isArray(loan.members)) {
@@ -198,27 +263,27 @@ const [selectedLoanId, setSelectedLoanId] = useState("");
 
     const computed = calculateLoan(principal, durationDays);
 
-setCreatingLoan(true);
-setMessage("");
+    setCreatingLoan(true);
+    setMessage("");
 
-const { count, error: countError } = await supabase
-  .from("loans")
-  .select("id", { count: "exact", head: true });
+    const { count, error: countError } = await supabase
+      .from("loans")
+      .select("id", { count: "exact", head: true });
 
-if (countError) {
-  setMessage(countError.message);
-  setCreatingLoan(false);
-  return;
-}
+    if (countError) {
+      setMessage(countError.message);
+      setCreatingLoan(false);
+      return;
+    }
 
-const nextLoanNumber = `CAPD-LOAN-${String((count || 0) + 1).padStart(
-  5,
-  "0"
-)}`;
+    const nextLoanNumber = `CAPD-LOAN-${String((count || 0) + 1).padStart(
+      5,
+      "0"
+    )}`;
 
-const { error } = await supabase.from("loans").insert({
-  loan_number: nextLoanNumber,
-  member_id: newLoan.member_id,
+    const { error } = await supabase.from("loans").insert({
+      loan_number: nextLoanNumber,
+      member_id: newLoan.member_id,
       business_name: newLoan.business_name.trim() || null,
       loan_amount: principal,
       duration_days: durationDays,
@@ -232,6 +297,7 @@ const { error } = await supabase.from("loans").insert({
       purpose: newLoan.purpose.trim() || null,
       status: "pending",
       created_by: currentAdmin?.id || null,
+      is_deleted: false,
     });
 
     if (error) {
@@ -241,39 +307,39 @@ const { error } = await supabase.from("loans").insert({
     }
 
     setMessage("Loan created and sent for approval.");
-    setNewLoan({
-      member_id: "",
-      business_name: "",
-      loan_amount: "",
-      duration_days: "",
-      purpose: "",
-    });
+    setNewLoan(emptyNewLoan);
 
     await loadLoans();
     setCreatingLoan(false);
   }
 
-async function loadLoanSchedule(loanId: string) {
-  const { data, error } = await supabase
-    .from("loan_repayment_schedule")
-    .select("*")
-    .eq("loan_id", loanId)
-    .order("due_date", { ascending: true });
+  async function loadLoanSchedule(loanId: string) {
+    const { data, error } = await supabase
+      .from("loan_repayment_schedule")
+      .select("*")
+      .eq("loan_id", loanId)
+      .order("due_date", { ascending: true });
 
-  if (error) {
-    setMessage(error.message);
-    return;
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setSelectedLoanId(loanId);
+    setSelectedLoanSchedule((data as RepaymentScheduleRow[]) || []);
+
+    if (!data || data.length === 0) {
+      setMessage("No repayment schedule found for this loan yet.");
+    }
   }
-
-  setSelectedLoanId(loanId);
-  setSelectedLoanSchedule(data || []);
-}
 
   async function approveLoan(loan: Loan) {
     if (!canManageLoans) return;
 
     const confirmed = window.confirm("Approve this loan?");
     if (!confirmed) return;
+
+    setActionLoanId(loan.id);
 
     const { error } = await supabase
       .from("loans")
@@ -283,6 +349,8 @@ async function loadLoanSchedule(loanId: string) {
         approved_by: currentAdmin?.id || null,
       })
       .eq("id", loan.id);
+
+    setActionLoanId(null);
 
     if (error) {
       setMessage(error.message);
@@ -302,6 +370,8 @@ async function loadLoanSchedule(loanId: string) {
 
     if (!confirmed) return;
 
+    setActionLoanId(loan.id);
+
     const startDate = new Date().toISOString().split("T")[0];
 
     const { error } = await supabase
@@ -320,61 +390,62 @@ async function loadLoanSchedule(loanId: string) {
 
     if (error) {
       setMessage(error.message);
+      setActionLoanId(null);
       return;
     }
 
-const dailyAmount = Number(loan.daily_payment_amount || 0);
-const durationDays = Number(loan.duration_days || 0);
-const memberId = loan.member_id;
+    const dailyAmount = Number(loan.daily_payment_amount || 0);
+    const durationDays = Number(loan.duration_days || 0);
+    const memberId = loan.member_id;
 
-if (memberId && dailyAmount > 0 && durationDays > 0) {
-  const { data: existingSchedule, error: existingScheduleError } =
-    await supabase
-      .from("loan_repayment_schedule")
-      .select("id")
-      .eq("loan_id", loan.id)
-      .limit(1);
+    if (memberId && dailyAmount > 0 && durationDays > 0) {
+      const { data: existingSchedule, error: existingScheduleError } =
+        await supabase
+          .from("loan_repayment_schedule")
+          .select("id")
+          .eq("loan_id", loan.id)
+          .limit(1);
 
-  if (existingScheduleError) {
-    setMessage(existingScheduleError.message);
-    return;
-  }
+      if (existingScheduleError) {
+        setMessage(existingScheduleError.message);
+        setActionLoanId(null);
+        return;
+      }
 
-  if (!existingSchedule || existingSchedule.length === 0) {
-    const start = loan.start_date
-      ? new Date(loan.start_date)
-      : new Date();
+      if (!existingSchedule || existingSchedule.length === 0) {
+        const start = loan.start_date ? new Date(loan.start_date) : new Date();
 
-    const scheduleRows = Array.from({ length: durationDays }, (_, index) => {
-      const dueDate = new Date(start);
-      dueDate.setDate(start.getDate() + index);
+        const scheduleRows = Array.from({ length: durationDays }, (_, index) => {
+          const dueDate = new Date(start);
+          dueDate.setDate(start.getDate() + index);
 
-      return {
-        loan_id: loan.id,
-        member_id: memberId,
-        installment_number: index + 1,
-        due_date: dueDate.toISOString().slice(0, 10),
-        expected_amount: dailyAmount,
-        paid_amount: 0,
-        arrears_amount: dailyAmount,
-        status: "pending",
-      };
-    });
+          return {
+            loan_id: loan.id,
+            member_id: memberId,
+            installment_number: index + 1,
+            due_date: dueDate.toISOString().slice(0, 10),
+            expected_amount: dailyAmount,
+            paid_amount: 0,
+            arrears_amount: dailyAmount,
+            status: "pending",
+          };
+        });
 
-    const { error: scheduleError } = await supabase
-      .from("loan_repayment_schedule")
-      .insert(scheduleRows);
+        const { error: scheduleError } = await supabase
+          .from("loan_repayment_schedule")
+          .insert(scheduleRows);
 
-    if (scheduleError) {
-      setMessage(scheduleError.message);
-      return;
+        if (scheduleError) {
+          setMessage(scheduleError.message);
+          setActionLoanId(null);
+          return;
+        }
+      }
     }
-  }
-}
 
-    setMessage("Loan disbursed and activated.");
-    await loadLoans();
+    setActionLoanId(null);
     setMessage("Loan disbursed, activated, and repayment schedule generated.");
+    await loadLoans();
   }
 
   async function rejectLoan(loan: Loan) {
@@ -382,6 +453,8 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
 
     const reason = window.prompt("Reason for rejecting this loan?");
     if (reason === null) return;
+
+    setActionLoanId(loan.id);
 
     const { error } = await supabase
       .from("loans")
@@ -391,6 +464,8 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
         rejection_reason: reason || "No reason provided",
       })
       .eq("id", loan.id);
+
+    setActionLoanId(null);
 
     if (error) {
       setMessage(error.message);
@@ -407,13 +482,19 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
     const confirmed = window.confirm("Close this loan manually?");
     if (!confirmed) return;
 
+    setActionLoanId(loan.id);
+
     const { error } = await supabase
       .from("loans")
       .update({
         status: "closed",
         outstanding_balance: 0,
+        updated_at: new Date().toISOString(),
+        updated_by: currentAdmin?.id || null,
       })
       .eq("id", loan.id);
+
+    setActionLoanId(null);
 
     if (error) {
       setMessage(error.message);
@@ -422,6 +503,241 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
 
     setMessage("Loan closed.");
     await loadLoans();
+  }
+
+  function openEditLoanModal(loan: Loan) {
+    if (!isSuperAdmin) {
+      setMessage("Only a Super Admin can edit loan records.");
+      return;
+    }
+
+    setEditingLoan(loan);
+    setEditLoan({
+      member_id: loan.member_id || "",
+      business_name: loan.business_name || "",
+      loan_amount: String(loan.loan_amount || ""),
+      duration_days: String(loan.duration_days || ""),
+      purpose: loan.purpose || "",
+      status: loan.status || "pending",
+      reason: "",
+    });
+  }
+
+  function closeEditLoanModal() {
+    setEditingLoan(null);
+    setEditLoan(emptyEditLoan);
+    setSavingEdit(false);
+  }
+
+  async function updateLoan() {
+    if (!isSuperAdmin) {
+      setMessage("Only a Super Admin can edit loan records.");
+      return;
+    }
+
+    if (!editingLoan) return;
+
+    if (!editLoan.member_id) {
+      setMessage("Please select a member for this loan.");
+      return;
+    }
+
+    const principal = Number(editLoan.loan_amount || 0);
+    const durationDays = Number(editLoan.duration_days || 0);
+    const reason = editLoan.reason.trim();
+
+    if (Number.isNaN(principal) || principal <= 0) {
+      setMessage("Loan amount must be greater than zero.");
+      return;
+    }
+
+    if (Number.isNaN(durationDays) || durationDays <= 0) {
+      setMessage("Duration must be greater than zero.");
+      return;
+    }
+
+    if (!reason) {
+      setMessage("Please enter a reason for editing this loan.");
+      return;
+    }
+
+    const principalChanged = principal !== Number(editingLoan.loan_amount || 0);
+    const durationChanged =
+      durationDays !== Number(editingLoan.duration_days || 0);
+    const financialFieldsChanged = principalChanged || durationChanged;
+
+    if (
+      financialFieldsChanged &&
+      ["active", "closed"].includes(editingLoan.status)
+    ) {
+      const confirmed = window.confirm(
+        "This loan is already active or closed. Editing principal or duration will update the loan totals, but it will not automatically rebuild paid repayment history. Continue?"
+      );
+
+      if (!confirmed) return;
+    }
+
+    const computed = calculateLoan(principal, durationDays);
+    const amountRepaid = Number(editingLoan.amount_repaid || 0);
+    const recalculatedOutstanding = Math.max(
+      computed.totalExpectedRepayment - amountRepaid,
+      0
+    );
+
+    const selectedStatus = editLoan.status || editingLoan.status || "pending";
+    const finalOutstanding =
+      selectedStatus === "closed" ? 0 : recalculatedOutstanding;
+
+    const now = new Date().toISOString();
+    const memberCanBeChanged = !["active", "closed"].includes(
+      editingLoan.status
+    );
+
+    const updatePayload: Record<string, any> = {
+      business_name: editLoan.business_name.trim() || null,
+      loan_amount: principal,
+      duration_days: durationDays,
+      insurance_fee: computed.insuranceFee,
+      registration_fee: computed.registrationFee,
+      total_interest: computed.totalInterest,
+      daily_payment_amount: computed.dailyPaymentAmount,
+      total_expected_repayment: computed.totalExpectedRepayment,
+      outstanding_balance: finalOutstanding,
+      purpose: editLoan.purpose.trim() || null,
+      status: selectedStatus,
+      edit_reason: reason,
+      updated_at: now,
+      updated_by: currentAdmin?.id || null,
+    };
+
+    if (memberCanBeChanged) {
+      updatePayload.member_id = editLoan.member_id;
+    }
+
+    if (selectedStatus === "approved" && !editingLoan.approved_at) {
+      updatePayload.approved_at = now;
+      updatePayload.approved_by = currentAdmin?.id || null;
+    }
+
+    if (selectedStatus === "rejected") {
+      updatePayload.rejection_reason = reason;
+
+      if (!editingLoan.rejected_at) {
+        updatePayload.rejected_at = now;
+      }
+    }
+
+    setSavingEdit(true);
+
+    const { error } = await supabase
+      .from("loans")
+      .update(updatePayload)
+      .eq("id", editingLoan.id);
+
+    if (error) {
+      setMessage(error.message || "Failed to update loan.");
+      setSavingEdit(false);
+      return;
+    }
+
+    const { error: auditError } = await supabase.from("loan_audit_logs").insert({
+      loan_id: editingLoan.id,
+      action: "edited",
+      old_data: editingLoan,
+      new_data: updatePayload,
+      reason,
+      performed_by: currentAdmin?.id || null,
+    });
+
+    closeEditLoanModal();
+    await loadLoans();
+
+    if (auditError) {
+      setMessage(
+        `Loan updated successfully, but audit log was not saved: ${auditError.message}`
+      );
+      return;
+    }
+
+    setMessage("Loan updated successfully.");
+  }
+
+  async function deleteLoan(loan: Loan) {
+    if (!isSuperAdmin) {
+      setMessage("Only a Super Admin can delete loan records.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this loan? It will be hidden from the Loan Management table but kept in the database for audit history."
+    );
+
+    if (!confirmed) return;
+
+    if (Number(loan.amount_repaid || 0) > 0) {
+      const financialConfirm = window.confirm(
+        "This loan already has repayments recorded. Deleting it will hide it from the table, but the audit history will remain. Continue?"
+      );
+
+      if (!financialConfirm) return;
+    }
+
+    const reason = window.prompt("Reason for deleting this loan?");
+
+    if (!reason || !reason.trim()) {
+      setMessage("Delete reason is required.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    const deletePayload = {
+      is_deleted: true,
+      deleted_at: now,
+      deleted_by: currentAdmin?.id || null,
+      edit_reason: reason.trim(),
+      updated_at: now,
+      updated_by: currentAdmin?.id || null,
+    };
+
+    setActionLoanId(loan.id);
+
+    const { error } = await supabase
+      .from("loans")
+      .update(deletePayload)
+      .eq("id", loan.id);
+
+    if (error) {
+      setMessage(error.message || "Failed to delete loan.");
+      setActionLoanId(null);
+      return;
+    }
+
+    const { error: auditError } = await supabase.from("loan_audit_logs").insert({
+      loan_id: loan.id,
+      action: "deleted",
+      old_data: loan,
+      new_data: deletePayload,
+      reason: reason.trim(),
+      performed_by: currentAdmin?.id || null,
+    });
+
+    if (selectedLoanId === loan.id) {
+      setSelectedLoanId("");
+      setSelectedLoanSchedule([]);
+    }
+
+    setActionLoanId(null);
+    await loadLoans();
+
+    if (auditError) {
+      setMessage(
+        `Loan deleted successfully, but audit log was not saved: ${auditError.message}`
+      );
+      return;
+    }
+
+    setMessage("Loan deleted successfully.");
   }
 
   function statusStyle(status: string) {
@@ -467,8 +783,14 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard title="Total Loans" value={loanStats.totalLoans.toString()} />
-        <MetricCard title="Pending Review" value={loanStats.pendingLoans.toString()} />
-        <MetricCard title="Approved Awaiting Disbursement" value={loanStats.approvedLoans.toString()} />
+        <MetricCard
+          title="Pending Review"
+          value={loanStats.pendingLoans.toString()}
+        />
+        <MetricCard
+          title="Approved Awaiting Disbursement"
+          value={loanStats.approvedLoans.toString()}
+        />
         <MetricCard title="Active Loans" value={loanStats.activeLoans.toString()} />
         <MetricCard
           title="Principal Created"
@@ -496,7 +818,7 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
             </div>
           )}
 
-          {canManageLoans && (
+          {canManageLoans ? (
             <div className="mt-6 grid gap-5 md:grid-cols-2">
               <select
                 value={newLoan.member_id}
@@ -551,6 +873,10 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
                 placeholder="Purpose of loan"
               />
             </div>
+          ) : (
+            <p className="mt-6 font-semibold text-slate-600">
+              You do not have permission to create loans.
+            </p>
           )}
 
           <div className="mt-6 rounded-3xl bg-slate-50 p-6">
@@ -597,9 +923,18 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
 
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
-          <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Loan Management
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-[#0D2D6E]">
+                Loan Management
+              </h2>
+              {isSuperAdmin && (
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  Super Admin controls are enabled: Edit and Delete are available.
+                </p>
+              )}
+            </div>
+          </div>
 
           {loadingLoans ? (
             <p className="mt-6 font-semibold text-slate-600">
@@ -611,7 +946,7 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
             </p>
           ) : (
             <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-[1650px] text-left text-sm">
+              <table className="w-full min-w-[1850px] text-left text-sm">
                 <thead>
                   <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
                     <th className="py-4">Member</th>
@@ -631,220 +966,449 @@ if (memberId && dailyAmount > 0 && durationDays > 0) {
                 </thead>
 
                 <tbody>
-                  {loans.map((loan) => (
-                    <tr key={loan.id} className="border-b">
-                      <td className="py-4 font-bold text-[#0D2D6E]">
-                        {getMemberName(loan)}
-                        <span className="block text-xs text-slate-500">
-                          {getMemberNumber(loan)}
-                        </span>
-                      </td>
+                  {loans.map((loan) => {
+                    const isWorking = actionLoanId === loan.id;
 
-                      <td className="py-4">{loan.business_name || "-"}</td>
+                    return (
+                      <tr key={loan.id} className="border-b">
+                        <td className="py-4 font-bold text-[#0D2D6E]">
+                          {getMemberName(loan)}
+                          <span className="block text-xs text-slate-500">
+                            {getMemberNumber(loan)}
+                          </span>
+                        </td>
 
-                      <td className="py-4 font-bold">
-                        FCFA {Number(loan.loan_amount || 0).toLocaleString()}
-                      </td>
+                        <td className="py-4">{loan.business_name || "-"}</td>
 
-                      <td className="py-4 font-bold">
-                        FCFA{" "}
-                        {Number(
-                          loan.total_expected_repayment || 0
-                        ).toLocaleString()}
-                      </td>
+                        <td className="py-4 font-bold">
+                          FCFA {Number(loan.loan_amount || 0).toLocaleString()}
+                        </td>
 
-                      <td className="py-4 font-bold">
-                        FCFA {Number(loan.amount_repaid || 0).toLocaleString()}
-                      </td>
+                        <td className="py-4 font-bold">
+                          FCFA{" "}
+                          {Number(
+                            loan.total_expected_repayment || 0
+                          ).toLocaleString()}
+                        </td>
 
-                      <td className="py-4 font-black text-[#0D2D6E]">
-                        FCFA{" "}
-                        {Number(
-                          loan.outstanding_balance || 0
-                        ).toLocaleString()}
-                      </td>
+                        <td className="py-4 font-bold">
+                          FCFA{" "}
+                          {Number(loan.amount_repaid || 0).toLocaleString()}
+                        </td>
 
-                      <td className="py-4">
-                        FCFA{" "}
-                        {Number(loan.daily_payment_amount || 0).toLocaleString(
-                          undefined,
-                          { maximumFractionDigits: 0 }
-                        )}
-                      </td>
+                        <td className="py-4 font-black text-[#0D2D6E]">
+                          FCFA{" "}
+                          {Number(
+                            loan.outstanding_balance || 0
+                          ).toLocaleString()}
+                        </td>
 
-                      <td className="py-4">{loan.duration_days} days</td>
+                        <td className="py-4">
+                          FCFA{" "}
+                          {Number(
+                            loan.daily_payment_amount || 0
+                          ).toLocaleString(undefined, {
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
 
-                      <td className="py-4">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-bold ${statusStyle(
-                            loan.status
-                          )}`}
-                        >
-                          {loan.status?.toUpperCase()}
-                        </span>
-                      </td>
+                        <td className="py-4">{loan.duration_days} days</td>
 
-                      <td className="py-4 text-slate-600">
-                        {loan.created_at
-                          ? new Date(loan.created_at).toLocaleDateString()
-                          : "-"}
-                      </td>
+                        <td className="py-4">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold ${statusStyle(
+                              loan.status
+                            )}`}
+                          >
+                            {loan.status?.toUpperCase()}
+                          </span>
+                        </td>
 
-                      <td className="py-4 text-slate-600">
-                        {loan.approved_at
-                          ? new Date(loan.approved_at).toLocaleDateString()
-                          : "-"}
-                      </td>
+                        <td className="py-4 text-slate-600">
+                          {loan.created_at
+                            ? new Date(loan.created_at).toLocaleDateString()
+                            : "-"}
+                        </td>
 
-                      <td className="py-4 text-slate-600">
-                        {loan.disbursed_at
-                          ? new Date(loan.disbursed_at).toLocaleDateString()
-                          : "-"}
-                      </td>
+                        <td className="py-4 text-slate-600">
+                          {loan.approved_at
+                            ? new Date(loan.approved_at).toLocaleDateString()
+                            : "-"}
+                        </td>
 
-                      <td className="py-4">
-                        <div className="flex flex-wrap gap-2">
-                          {loan.status === "pending" && (
-                            <>
+                        <td className="py-4 text-slate-600">
+                          {loan.disbursed_at
+                            ? new Date(loan.disbursed_at).toLocaleDateString()
+                            : "-"}
+                        </td>
+
+                        <td className="py-4">
+                          <div className="flex flex-wrap gap-2">
+                            {loan.status === "pending" && (
+                              <>
+                                <Button
+                                  onClick={() => approveLoan(loan)}
+                                  disabled={!canManageLoans || isWorking}
+                                  className="px-4 py-2"
+                                >
+                                  {isWorking ? "Working..." : "Approve"}
+                                </Button>
+
+                                <button
+                                  onClick={() => rejectLoan(loan)}
+                                  disabled={!canManageLoans || isWorking}
+                                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+
+                            {loan.status === "approved" && (
                               <Button
-                                onClick={() => approveLoan(loan)}
-                                disabled={!canManageLoans}
-                                className="px-4 py-2"
+                                onClick={() => disburseLoan(loan)}
+                                disabled={!canManageLoans || isWorking}
+                                className="bg-[#009B5A] px-4 py-2 hover:opacity-90"
                               >
-                                Approve
+                                {isWorking ? "Working..." : "Disburse"}
                               </Button>
+                            )}
 
-                              <button
-                                onClick={() => rejectLoan(loan)}
-                                disabled={!canManageLoans}
-                                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
-                              >
-                                Reject
-                              </button>
-                            </>
-                          )}
-
-                          {loan.status === "approved" && (
                             <Button
-                              onClick={() => disburseLoan(loan)}
-                              disabled={!canManageLoans}
-                              className="px-4 py-2 bg-[#009B5A] hover:opacity-90"
-                            >
-                              Disburse
-                            </Button>
-                          )}
-<Button
-  onClick={() => loadLoanSchedule(loan.id)}
-  className="px-4 py-2"
->
-  View Schedule
-</Button>
-                          {loan.status === "active" && (
-                            <Button
-                              onClick={() => closeLoan(loan)}
-                              disabled={!canManageLoans}
+                              onClick={() => loadLoanSchedule(loan.id)}
                               className="px-4 py-2"
                             >
-                              Close
+                              View Schedule
                             </Button>
-                          )}
 
-                          {loan.status === "closed" && (
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                              Closed
-                            </span>
-                          )}
+                            {loan.status === "active" && (
+                              <Button
+                                onClick={() => closeLoan(loan)}
+                                disabled={!canManageLoans || isWorking}
+                                className="px-4 py-2"
+                              >
+                                Close
+                              </Button>
+                            )}
 
-                          {loan.status === "rejected" && (
-                            <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
-                              Rejected
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {loan.status === "closed" && (
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                                Closed
+                              </span>
+                            )}
+
+                            {loan.status === "rejected" && (
+                              <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
+                                Rejected
+                              </span>
+                            )}
+
+                            {isSuperAdmin && (
+                              <>
+                                <button
+                                  onClick={() => openEditLoanModal(loan)}
+                                  disabled={isWorking}
+                                  className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-60"
+                                >
+                                  Edit
+                                </button>
+
+                                <button
+                                  onClick={() => deleteLoan(loan)}
+                                  disabled={isWorking}
+                                  className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-800 disabled:opacity-60"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </CardContent>
-
       </Card>
-      {selectedLoanSchedule.length > 0 && (
-  <Card className="border-slate-200 bg-white shadow-sm">
-    <CardContent className="p-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Repayment Schedule
-          </h2>
 
-          <p className="mt-2 text-sm text-slate-600">
-            Showing {selectedLoanSchedule.length} scheduled repayment day(s).
-          </p>
-        </div>
+      {selectedLoanId && (
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-8">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black text-[#0D2D6E]">
+                  Repayment Schedule
+                </h2>
 
-        <button
-          onClick={() => {
-            setSelectedLoanId("");
-            setSelectedLoanSchedule([]);
-          }}
-          className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200"
-        >
-          Close Schedule
-        </button>
-      </div>
+                <p className="mt-2 text-sm text-slate-600">
+                  Showing {selectedLoanSchedule.length} scheduled repayment day(s).
+                </p>
+              </div>
 
-      <div className="mt-6 overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead>
-            <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-              <th className="py-4">No.</th>
-              <th className="py-4">Due Date</th>
-              <th className="py-4">Expected</th>
-              <th className="py-4">Paid</th>
-              <th className="py-4">Arrears</th>
-              <th className="py-4">Status</th>
-            </tr>
-          </thead>
+              <button
+                onClick={() => {
+                  setSelectedLoanId("");
+                  setSelectedLoanSchedule([]);
+                }}
+                className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200"
+              >
+                Close Schedule
+              </button>
+            </div>
 
-          <tbody>
-            {selectedLoanSchedule.map((row) => (
-              <tr key={row.id} className="border-b">
-                <td className="py-4 font-bold text-[#0D2D6E]">
-                  {row.installment_number}
-                </td>
+            {selectedLoanSchedule.length === 0 ? (
+              <p className="mt-6 font-semibold text-slate-600">
+                No repayment schedule found for this loan.
+              </p>
+            ) : (
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
+                      <th className="py-4">No.</th>
+                      <th className="py-4">Due Date</th>
+                      <th className="py-4">Expected</th>
+                      <th className="py-4">Paid</th>
+                      <th className="py-4">Arrears</th>
+                      <th className="py-4">Status</th>
+                    </tr>
+                  </thead>
 
-                <td className="py-4">{row.due_date}</td>
+                  <tbody>
+                    {selectedLoanSchedule.map((row) => (
+                      <tr key={row.id} className="border-b">
+                        <td className="py-4 font-bold text-[#0D2D6E]">
+                          {row.installment_number}
+                        </td>
 
-                <td className="py-4 font-bold">
-                  FCFA {Number(row.expected_amount || 0).toLocaleString()}
-                </td>
+                        <td className="py-4">{row.due_date}</td>
 
-                <td className="py-4 font-bold">
-                  FCFA {Number(row.paid_amount || 0).toLocaleString()}
-                </td>
+                        <td className="py-4 font-bold">
+                          FCFA{" "}
+                          {Number(row.expected_amount || 0).toLocaleString()}
+                        </td>
 
-                <td
-                  className={
-                    Number(row.arrears_amount || 0) > 0
-                      ? "py-4 font-black text-red-600"
-                      : "py-4 font-black text-green-700"
+                        <td className="py-4 font-bold">
+                          FCFA {Number(row.paid_amount || 0).toLocaleString()}
+                        </td>
+
+                        <td
+                          className={
+                            Number(row.arrears_amount || 0) > 0
+                              ? "py-4 font-black text-red-600"
+                              : "py-4 font-black text-green-700"
+                          }
+                        >
+                          FCFA{" "}
+                          {Number(row.arrears_amount || 0).toLocaleString()}
+                        </td>
+
+                        <td className="py-4 capitalize">{row.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {editingLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-8 shadow-2xl">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black text-[#0D2D6E]">
+                  Edit Loan
+                </h2>
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  Changes are restricted to Super Admin and saved in the audit log.
+                </p>
+              </div>
+
+              <button
+                onClick={closeEditLoanModal}
+                className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-600">
+                  Member
+                </label>
+                <select
+                  value={editLoan.member_id}
+                  onChange={(e) =>
+                    setEditLoan({ ...editLoan, member_id: e.target.value })
                   }
+                  disabled={["active", "closed"].includes(editingLoan.status)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none disabled:bg-slate-100"
                 >
-                  FCFA {Number(row.arrears_amount || 0).toLocaleString()}
-                </td>
+                  <option value="">Select Member</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.full_name} ({member.member_number || "No Number"})
+                    </option>
+                  ))}
+                </select>
+                {["active", "closed"].includes(editingLoan.status) && (
+                  <p className="mt-2 text-xs font-semibold text-slate-500">
+                    Member cannot be changed for active or closed loans.
+                  </p>
+                )}
+              </div>
 
-                <td className="py-4 capitalize">{row.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </CardContent>
-  </Card>
-)}
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-600">
+                  Business Name
+                </label>
+                <input
+                  value={editLoan.business_name}
+                  onChange={(e) =>
+                    setEditLoan({ ...editLoan, business_name: e.target.value })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                  placeholder="Business name"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-600">
+                  Principal Amount
+                </label>
+                <input
+                  type="number"
+                  value={editLoan.loan_amount}
+                  onChange={(e) =>
+                    setEditLoan({ ...editLoan, loan_amount: e.target.value })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                  placeholder="Loan amount"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-600">
+                  Duration in Days
+                </label>
+                <input
+                  type="number"
+                  value={editLoan.duration_days}
+                  onChange={(e) =>
+                    setEditLoan({ ...editLoan, duration_days: e.target.value })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                  placeholder="Duration in days"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-600">
+                  Status
+                </label>
+                <select
+                  value={editLoan.status}
+                  onChange={(e) =>
+                    setEditLoan({ ...editLoan, status: e.target.value })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="active">Active</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-600">
+                  Purpose
+                </label>
+                <input
+                  value={editLoan.purpose}
+                  onChange={(e) =>
+                    setEditLoan({ ...editLoan, purpose: e.target.value })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                  placeholder="Purpose of loan"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-bold text-slate-600">
+                  Reason for Edit
+                </label>
+                <textarea
+                  value={editLoan.reason}
+                  onChange={(e) =>
+                    setEditLoan({ ...editLoan, reason: e.target.value })
+                  }
+                  className="min-h-[100px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                  placeholder="Explain why this loan is being edited"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-3xl bg-slate-50 p-6">
+              <p className="text-sm font-black uppercase tracking-widest text-slate-500">
+                Updated Computation Preview
+              </p>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-5">
+                <PreviewItem
+                  label="Insurance"
+                  value={`FCFA ${editPreview.insuranceFee.toLocaleString()}`}
+                />
+                <PreviewItem
+                  label="Registration"
+                  value={`FCFA ${editPreview.registrationFee.toLocaleString()}`}
+                />
+                <PreviewItem
+                  label="Interest"
+                  value={`FCFA ${editPreview.totalInterest.toLocaleString()}`}
+                />
+                <PreviewItem
+                  label="Total Repayment"
+                  value={`FCFA ${editPreview.totalExpectedRepayment.toLocaleString()}`}
+                />
+                <PreviewItem
+                  label="Daily Payment"
+                  value={`FCFA ${editPreview.dailyPaymentAmount.toLocaleString(
+                    undefined,
+                    { maximumFractionDigits: 0 }
+                  )}`}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button
+                onClick={updateLoan}
+                disabled={savingEdit}
+                className="px-6 py-3"
+              >
+                {savingEdit ? "Saving..." : "Save Changes"}
+              </Button>
+
+              <button
+                onClick={closeEditLoanModal}
+                disabled={savingEdit}
+                className="rounded-2xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
