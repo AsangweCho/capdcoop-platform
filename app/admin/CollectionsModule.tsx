@@ -137,7 +137,7 @@ function getVariance(item: Collection) {
 
 function getCollectionTypeLabel(type: string) {
   if (type === "savings") return "Savings";
-  if (type === "loan") return "Loan Repayment";
+  if (type === "loan") return "Aid Repayment";
   if (type === "share") return "Share Subscription";
 
   return type || "-";
@@ -667,122 +667,6 @@ if (collection.collection_type === "loan") {
 
     return true;
   }
-
-  async function approveLoanCollection(collection: Collection) {
-    const amount = Number(collection.collected_amount || 0);
-
-    if (amount <= 0) {
-      setMessage("Loan repayment amount must be greater than zero.");
-      return false;
-    }
-
-    if (!collection.member_id) {
-      setMessage("This loan collection is not linked to a member.");
-      return false;
-    }
-
-    const { data: activeLoan, error: loanLoadError } = await supabase
-      .from("loans")
-      .select(
-        "id, member_id, amount_repaid, outstanding_balance, total_expected_repayment, status"
-      )
-      .eq("member_id", collection.member_id)
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (loanLoadError) {
-      setMessage(loanLoadError.message);
-      return false;
-    }
-
-    if (!activeLoan) {
-      setMessage("No active loan found for this member.");
-      return false;
-    }
-
-    const currentRepaid = Number(activeLoan.amount_repaid || 0);
-    const currentBalance =
-      Number(activeLoan.outstanding_balance || 0) > 0
-        ? Number(activeLoan.outstanding_balance || 0)
-        : Number(activeLoan.total_expected_repayment || 0) - currentRepaid;
-
-    const updatedRepaid = currentRepaid + amount;
-    const updatedBalance = Math.max(currentBalance - amount, 0);
-    const nextStatus = updatedBalance <= 0 ? "closed" : "active";
-
-    const { error: loanUpdateError } = await supabase
-      .from("loans")
-      .update({
-        amount_repaid: updatedRepaid,
-        outstanding_balance: updatedBalance,
-        last_payment_date: new Date().toISOString(),
-        status: nextStatus,
-      })
-      .eq("id", activeLoan.id);
-
-    if (loanUpdateError) {
-      setMessage(loanUpdateError.message);
-      return false;
-    }
-
-    let remainingPayment = amount;
-
-    const { data: scheduleRows, error: scheduleLoadError } = await supabase
-      .from("loan_repayment_schedule")
-      .select("id, expected_amount, paid_amount, arrears_amount, status, due_date")
-      .eq("loan_id", activeLoan.id)
-      .in("status", ["pending", "partial", "overdue"])
-      .order("due_date", { ascending: true });
-
-    if (scheduleLoadError) {
-      setMessage(scheduleLoadError.message);
-      return false;
-    }
-
-    for (const row of scheduleRows || []) {
-      if (remainingPayment <= 0) break;
-
-      const expected = Number(row.expected_amount || 0);
-      const alreadyPaid = Number(row.paid_amount || 0);
-      const outstandingForRow = Math.max(expected - alreadyPaid, 0);
-
-      if (outstandingForRow <= 0) continue;
-
-      const amountApplied = Math.min(remainingPayment, outstandingForRow);
-      const newPaidAmount = alreadyPaid + amountApplied;
-      const newArrearsAmount = Math.max(expected - newPaidAmount, 0);
-
-      let newStatus = "partial";
-
-      if (newArrearsAmount <= 0) {
-        newStatus = "paid";
-      } else if (new Date(row.due_date) < new Date()) {
-        newStatus = "overdue";
-      }
-
-      const { error: scheduleUpdateError } = await supabase
-        .from("loan_repayment_schedule")
-        .update({
-          paid_amount: newPaidAmount,
-          arrears_amount: newArrearsAmount,
-          status: newStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", row.id);
-
-      if (scheduleUpdateError) {
-        setMessage(scheduleUpdateError.message);
-        return false;
-      }
-
-      remainingPayment -= amountApplied;
-    }
-
-    return true;
-  }
-
   async function rejectCollection(collection: Collection) {
     setMessage("");
 
@@ -1033,7 +917,7 @@ const allApprovedCount = allApprovedCollections.length;
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
             >
               <option value="savings">Savings</option>
-              <option value="loan">Loan Repayment</option>
+              <option value="loan">Aid Repayment</option>
               <option value="share">Share Subscription</option>
             </select>
 
@@ -1268,7 +1152,7 @@ Yesterday&apos;s Approved Collections
             >
               <option value="all">All Types</option>
               <option value="savings">Savings</option>
-              <option value="loan">Loan Repayment</option>
+            <option value="loan">Aid Repayment</option>
               <option value="share">Share Subscription</option>
             </select>
 
