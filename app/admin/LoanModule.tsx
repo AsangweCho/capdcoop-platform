@@ -211,7 +211,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setMessage(error.message || "Failed to load loans.");
+      setMessage(error.message || "Failed to load aid records.");
       setLoans([]);
       setLoadingLoans(false);
       return;

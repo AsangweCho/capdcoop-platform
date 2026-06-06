@@ -412,7 +412,7 @@ export default function AgentPortal() {
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
               >
                 <option value="savings">Savings</option>
-                <option value="loan">Loan Repayment</option>
+                <option value="loan">Aid Repayment</option>
                 <option value="share">Share Subscription</option>
               </select>
 
