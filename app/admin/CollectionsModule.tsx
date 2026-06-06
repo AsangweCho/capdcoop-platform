@@ -459,14 +459,37 @@ await Promise.all([
 
     setProcessingCollectionId(collection.id);
 
-    if (collection.collection_type === "savings") {
-      const success = await approveSavingsCollection(collection);
+  if (collection.collection_type === "savings") {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-      if (!success) {
-        setProcessingCollectionId(null);
-        return;
-      }
-    }
+  const { data, error } = await supabase.rpc("post_approved_savings_collection", {
+    p_collection_id: collection.id,
+    p_approved_by: user?.id || null,
+  });
+
+  setProcessingCollectionId(null);
+
+  if (error) {
+    console.error("Error posting approved savings collection:", error);
+    setMessage(error.message);
+    return;
+  }
+
+  setMessage("Savings collection approved and posted successfully.");
+
+  await Promise.all([
+    loadCollections(),
+    loadExpectedAidCollectionsToday(),
+    loadOverdueAidCollections(),
+    loadAidPortfolioSummary(),
+  ]);
+
+  console.log("Savings collection posting result:", data);
+
+  return;
+}
 
     if (collection.collection_type === "share") {
       const success = await approveShareCollection(collection);
