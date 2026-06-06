@@ -48,6 +48,32 @@ interface PaymentModuleProps {
 
 const SHARE_PRICE = 10000;
 
+function getPaymentTypeLabel(type: string | null | undefined) {
+  if (type === "share_purchase") return "Share Purchase";
+  if (type === "loan_repayment") return "Aid Repayment";
+  if (type === "aid_repayment") return "Aid Repayment";
+  if (type === "registration") return "Registration";
+  if (type === "savings") return "Savings";
+  if (type === "other") return "Other";
+
+  return type || "-";
+}
+
+function getPaymentMethodLabel(method: string | null | undefined) {
+  if (method === "momo") return "Mobile Money";
+  if (method === "cash") return "Cash";
+  if (method === "bank") return "Bank Transfer";
+  if (method === "card") return "Card Payment";
+  if (method === "Orange Money") return "Orange Money";
+  if (method === "Card Payment") return "Card Payment";
+
+  return method || "-";
+}
+
+function canEditOrDeletePayment(payment: Payment) {
+  return payment.payment_status === "pending";
+}
+
 export default function PaymentModule({
   currentAdmin,
 }: PaymentModuleProps) {
@@ -657,34 +683,34 @@ return (
                       {payment.members?.email || "-"}
                     </td>
 
-                    <td className="py-4">
-                      {payment.payment_type}
-                    </td>
-
+                   <td className="py-4">
+  {getPaymentTypeLabel(payment.payment_type)}
+</td>
                     <td className="py-4 font-bold">
                       FCFA{" "}
                       {Number(payment.amount).toLocaleString()}
                     </td>
 
-                    <td className="py-4">
-                      {payment.payment_method}
-                    </td>
+  <td className="py-4">
+  {getPaymentMethodLabel(payment.payment_method)}
+</td>
 
                     <td className="py-4">
                       {payment.reference || "-"}
                     </td>
 
                     <td className="py-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          payment.payment_status ===
-                          "approved"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-amber-50 text-amber-700"
-                        }`}
-                      >
-                        {payment.payment_status}
-                      </span>
+<span
+  className={`rounded-full px-3 py-1 text-xs font-bold ${
+    payment.payment_status === "approved"
+      ? "bg-green-50 text-green-700"
+      : payment.payment_status === "rejected"
+        ? "bg-red-50 text-red-700"
+        : "bg-amber-50 text-amber-700"
+  }`}
+>
+  {payment.payment_status}
+</span>
                     </td>
 
                     <td className="py-4">
@@ -724,24 +750,30 @@ return (
       </span>
     )}
 
-    {isSuperAdmin && (
-      <>
-        <button
-          onClick={() => openEditPayment(payment)}
-          className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600"
-        >
-          Edit
-        </button>
+{isSuperAdmin && canEditOrDeletePayment(payment) && (
+  <>
+    <button
+      onClick={() => openEditPayment(payment)}
+      className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600"
+    >
+      Edit
+    </button>
 
-        <button
-          onClick={() => deletePaymentAsSuperAdmin(payment)}
-          disabled={deletingPaymentId === payment.id}
-          className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
-        >
-          {deletingPaymentId === payment.id ? "Deleting..." : "Delete"}
-        </button>
-      </>
-    )}
+    <button
+      onClick={() => deletePaymentAsSuperAdmin(payment)}
+      disabled={deletingPaymentId === payment.id}
+      className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+    >
+      {deletingPaymentId === payment.id ? "Deleting..." : "Delete"}
+    </button>
+  </>
+)}
+
+{isSuperAdmin && !canEditOrDeletePayment(payment) && (
+  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+    Locked
+  </span>
+)}
   </div>
 </td>
                   </tr>
