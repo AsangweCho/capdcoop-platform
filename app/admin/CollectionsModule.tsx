@@ -106,39 +106,6 @@ type AidPortfolioSummary = {
   active_outstanding_balance: number;
 };
 
-type PendingLoanDue = {
-  id: string;
-  loan_id: string;
-  member_id: string | null;
-  installment_number: number;
-  due_date: string;
-  expected_amount: number | null;
-  paid_amount: number | null;
-  arrears_amount: number | null;
-  status: string;
-  loan?: {
-    id: string;
-    loan_number?: string | null;
-    member_id: string | null;
-    business_name: string | null;
-    daily_payment_amount: number | null;
-    outstanding_balance: number | null;
-    status: string;
-    members?:
-      | {
-          id: string;
-          full_name: string;
-          member_number: string | null;
-        }
-      | {
-          id: string;
-          full_name: string;
-          member_number: string | null;
-        }[]
-      | null;
-  };
-};
-
 function getLocalDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -239,9 +206,6 @@ const [overdueAidCollections, setOverdueAidCollections] = useState<
 const [aidPortfolioSummary, setAidPortfolioSummary] =
   useState<AidPortfolioSummary | null>(null);
 
-  const [todayPendingLoanDues, setTodayPendingLoanDues] = useState<
-  PendingLoanDue[]
->([]);
 
   useEffect(() => {
     loadAll();
@@ -276,72 +240,6 @@ const [aidPortfolioSummary, setAidPortfolioSummary] =
 
     setMembers(data || []);
   }
-
-async function loadTodayPendingLoanDues() {
-  const todayDate = getLocalDateString();
-
-  const { data: scheduleRows, error: scheduleError } = await supabase
-    .from("loan_repayment_schedule")
-    .select(
-      "id, loan_id, member_id, installment_number, due_date, expected_amount, paid_amount, arrears_amount, status"
-    )
-    .eq("due_date", todayDate)
-    .in("status", ["pending", "partial", "overdue"])
-    .order("due_date", { ascending: true });
-
-  if (scheduleError) {
-    setMessage(scheduleError.message);
-    setTodayPendingLoanDues([]);
-    return;
-  }
-
-  const loanIds = Array.from(
-    new Set((scheduleRows || []).map((row) => row.loan_id).filter(Boolean))
-  );
-
-  if (loanIds.length === 0) {
-    setTodayPendingLoanDues([]);
-    return;
-  }
-
-  const { data: loansData, error: loansError } = await supabase
-    .from("loans")
-    .select(
-      `
-      id,
-      loan_number,
-      member_id,
-      business_name,
-      daily_payment_amount,
-      outstanding_balance,
-      status,
-      members (
-        id,
-        full_name,
-        member_number
-      )
-    `
-    )
-    .in("id", loanIds)
-    .eq("status", "active");
-
-  if (loansError) {
-    setMessage(loansError.message);
-    setTodayPendingLoanDues([]);
-    return;
-  }
-
-  const loanMap = new Map((loansData || []).map((loan) => [loan.id, loan]));
-
-  const dueRows = (scheduleRows || [])
-    .filter((row) => loanMap.has(row.loan_id))
-    .map((row) => ({
-      ...row,
-      loan: loanMap.get(row.loan_id),
-    }));
-
-  setTodayPendingLoanDues(dueRows as PendingLoanDue[]);
-}
 
   async function loadAgents() {
     const { data, error } = await supabase
@@ -579,14 +477,37 @@ await Promise.all([
       }
     }
 
-    if (collection.collection_type === "loan") {
-      const success = await approveLoanCollection(collection);
+if (collection.collection_type === "loan") {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-      if (!success) {
-        setProcessingCollectionId(null);
-        return;
-      }
-    }
+  const { data, error } = await supabase.rpc("post_approved_aid_collection", {
+    p_collection_id: collection.id,
+    p_approved_by: user?.id || null,
+  });
+
+  setProcessingCollectionId(null);
+
+  if (error) {
+    console.error("Error posting approved aid collection:", error);
+    setMessage(error.message);
+    return;
+  }
+
+  setMessage("Aid collection approved and posted successfully.");
+
+  await Promise.all([
+    loadCollections(),
+    loadExpectedAidCollectionsToday(),
+    loadOverdueAidCollections(),
+    loadAidPortfolioSummary(),
+  ]);
+
+  console.log("Aid collection posting result:", data);
+
+  return;
+}
 
     const { error: approveError } = await supabase
       .from(COLLECTIONS_TABLE)
@@ -905,11 +826,9 @@ await Promise.all([
     setDateFilter(getLocalDateString());
   }
 
-  const todayPendingCollections = useMemo(() => {
-    return collections.filter(
-      (item) => item.collection_date === today && item.status === "pending"
-    );
-  }, [collections, today]);
+const pendingCollectionsAwaitingApproval = useMemo(() => {
+  return collections.filter((item) => item.status === "pending");
+}, [collections]);
 
   const yesterdayApprovedCollections = useMemo(() => {
     return collections.filter(
@@ -925,19 +844,7 @@ const allApprovedCollections = useMemo(() => {
   return collections.filter((item) => item.status === "approved");
 }, [collections]);
 
-const todayPendingLoanDueCount = todayPendingLoanDues.length;
-
-const todayPendingLoanDueAmount = todayPendingLoanDues.reduce((sum, row) => {
-  const arrears = Number(row.arrears_amount || 0);
-  const expected = Number(row.expected_amount || 0);
-  const paid = Number(row.paid_amount || 0);
-
-  const amountDue = arrears > 0 ? arrears : Math.max(expected - paid, 0);
-
-  return sum + amountDue;
-}, 0);
-
-const todayPendingCount = todayPendingCollections.length;
+const pendingApprovalCount = pendingCollectionsAwaitingApproval.length;
 const yesterdayApprovedCount = yesterdayApprovedCollections.length;
 const allPendingCount = allPendingCollections.length;
 const allApprovedCount = allApprovedCollections.length;
@@ -1048,11 +955,10 @@ const allApprovedCount = allApprovedCollections.length;
           title="Yesterday Approved Variance"
           value={formatMoney(yesterdayVariance)}
         />
-        <MetricCard
-  title="Today Pending Collections"
-  value={todayPendingCount.toString()}
+<MetricCard
+  title="Pending Collections Awaiting Approval"
+  value={pendingApprovalCount.toString()}
 />
-
 <MetricCard
   title="Yesterday Approved Collections"
   value={yesterdayApprovedCount.toString()}
@@ -1236,132 +1142,31 @@ const allApprovedCount = allApprovedCollections.length;
   </CardContent>
 </Card> 
 
-      <Card className="border-slate-200 bg-white shadow-sm">
-  <CardContent className="p-8">
-    <div className="flex flex-wrap items-center gap-3">
-      <h2 className="text-2xl font-black text-[#0D2D6E]">
-Today&apos;s Loan Collections Due      </h2>
-
-      <span className="rounded-full bg-blue-50 px-4 py-2 text-sm font-black text-blue-700">
-        {todayPendingLoanDueCount}
-      </span>
-    </div>
-
-    <p className="mt-2 text-sm font-semibold text-slate-500">
-      Showing active loan repayments due for {today}.
-    </p>
-
-    {todayPendingLoanDues.length === 0 ? (
-      <p className="mt-6 font-semibold text-slate-600">
-        No active loan repayments due today.
-      </p>
-    ) : (
-      <div className="mt-6 overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-left text-sm">
-          <thead>
-            <tr className="border-b text-xs uppercase tracking-widest text-slate-500">
-              <th className="py-4">Member</th>
-              <th className="py-4">Business</th>
-              <th className="py-4">Installment</th>
-              <th className="py-4">Due Date</th>
-              <th className="py-4">Expected</th>
-              <th className="py-4">Paid</th>
-              <th className="py-4">Amount Due</th>
-              <th className="py-4">Loan Balance</th>
-              <th className="py-4">Status</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {todayPendingLoanDues.map((row) => {
-              const expected = Number(row.expected_amount || 0);
-              const paid = Number(row.paid_amount || 0);
-              const arrears = Number(row.arrears_amount || 0);
-              const amountDue =
-                arrears > 0 ? arrears : Math.max(expected - paid, 0);
-
-              const memberRecord = Array.isArray(row.loan?.members)
-                ? row.loan?.members[0]
-                : row.loan?.members;
-
-
-              return (
-                <tr key={row.id} className="border-b">
-                  <td className="py-4 font-bold text-[#0D2D6E]">
-                    {memberRecord?.full_name || "-"}
-                    <br />
-                    <span className="text-xs font-semibold text-slate-500">
-                      {memberRecord?.member_number || ""}
-                    </span>
-                  </td>
-
-                  <td className="py-4">
-                    {row.loan?.business_name || "-"}
-                  </td>
-
-                  <td className="py-4 font-bold">
-                    #{row.installment_number}
-                  </td>
-
-                  <td className="py-4">
-                    {row.due_date}
-                  </td>
-
-                  <td className="py-4 font-bold">
-                    {formatMoney(expected)}
-                  </td>
-
-                  <td className="py-4 font-bold">
-                    {formatMoney(paid)}
-                  </td>
-
-                  <td className="py-4 font-black text-red-600">
-                    {formatMoney(amountDue)}
-                  </td>
-
-                  <td className="py-4 font-bold text-[#0D2D6E]">
-                    {formatMoney(row.loan?.outstanding_balance)}
-                  </td>
-
-                  <td className="py-4 capitalize">
-                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
-                      {row.status}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    )}
-  </CardContent>
-</Card>
 
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
 <div className="flex flex-wrap items-center gap-3">
   <h2 className="text-2xl font-black text-[#0D2D6E]">
-    Today&apos;s Pending Collections
+    Pending Collections Awaiting Approval
   </h2>
 
   <span className="rounded-full bg-amber-50 px-4 py-2 text-sm font-black text-amber-700">
-    {todayPendingCount}
+    {pendingApprovalCount}
   </span>
 </div>
 
           <p className="mt-2 text-sm font-semibold text-slate-500">
-            Showing pending collections recorded for {today}.
+            Showing all collections awaiting finance approval.
           </p>
 
-          <CollectionsTable
-            items={todayPendingCollections}
-            emptyText="No pending collections for today."
-            showActions
-            onApprove={approveCollection}
-            onReject={rejectCollection}
-            processingCollectionId={processingCollectionId}
-          />
+<CollectionsTable
+  items={pendingCollectionsAwaitingApproval}
+  emptyText="No collections are currently awaiting approval."
+  showActions
+  onApprove={approveCollection}
+  onReject={rejectCollection}
+  processingCollectionId={processingCollectionId}
+/>
         </CardContent>
       </Card>
 
