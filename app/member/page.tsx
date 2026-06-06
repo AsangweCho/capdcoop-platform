@@ -124,6 +124,8 @@ export default function MemberPortal() {
   PaymentMethodDetail[]
 >([]);
 
+const [paymentType, setPaymentType] = useState("share_purchase");
+
   const [memberPayments, setMemberPayments] = useState<MemberPayment[]>([]);
   const [savingsAccounts, setSavingsAccounts] = useState<SavingsAccount[]>([]);
   const [savingsTransactions, setSavingsTransactions] = useState<SavingsTransaction[]>([]);
@@ -649,128 +651,171 @@ const selectedPaymentDetails = paymentMethodDetails.find(
           </CardContent>
         </Card>
 
-        <Card className="mt-8 border-slate-200 bg-white shadow-sm">
-          <CardContent className="p-8">
-            <h2 className="text-2xl font-black text-[var(--capd-navy)]">Submit Share Payment</h2>
-            <p className="mt-2 text-sm text-slate-600">Submit your membership or share subscription payment for admin validation.</p>
+  <Card className="mt-8 border-slate-200 bg-white shadow-sm">
+  <CardContent className="p-8">
+    <h2 className="text-2xl font-black text-[var(--capd-navy)]">
+      Submit Payment
+    </h2>
 
-            <div className="mt-6 grid gap-5 md:grid-cols-3">
-              <input value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Amount paid" />
-              <select
-  value={paymentMethod}
-  onChange={(event) => setPaymentMethod(event.target.value)}
-  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
->
-  {paymentMethodDetails.length === 0 ? (
-    <>
-      <option>MTN Mobile Money</option>
-      <option>Orange Money</option>
-      <option>Bank Transfer</option>
-      <option>Cash</option>
-      <option>USDT</option>
-    </>
-  ) : (
-    paymentMethodDetails.map((method) => (
-      <option key={method.id} value={method.method_name}>
-        {method.display_name}
-      </option>
-    ))
-  )}
-</select>
-              <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" placeholder="Transaction reference" />
-              <input type="file" accept="image/*,.pdf" onChange={(event) => setPaymentReceipt(event.target.files?.[0] || null)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none" />
-            </div>
+    <p className="mt-2 text-sm text-slate-600">
+      Submit your share purchase, aid repayment, savings deposit, registration, or other payment for admin validation.
+    </p>
 
-            {selectedPaymentDetails && (
-  <div className="mt-6 rounded-3xl border border-[#0D2D6E]/10 bg-slate-50 p-6">
-    <h3 className="text-xl font-black text-[#0D2D6E]">
-      {selectedPaymentDetails.display_name} Details
-    </h3>
+    <div className="mt-6 grid gap-5 md:grid-cols-3">
+      <select
+        value={paymentType}
+        onChange={(event) => setPaymentType(event.target.value)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+      >
+        <option value="share_purchase">Share Purchase</option>
+        <option value="loan_repayment">Aid Repayment</option>
+        <option value="savings">Savings Deposit</option>
+        <option value="registration">Registration</option>
+        <option value="other">Other</option>
+      </select>
 
-    <div className="mt-5 grid gap-4 md:grid-cols-2">
-      {selectedPaymentDetails.account_name && (
-        <div>
-          <p className="text-xs font-bold uppercase text-slate-500">
-            Account Name
-          </p>
-          <p className="mt-1 font-black text-slate-800">
-            {selectedPaymentDetails.account_name}
-          </p>
-        </div>
-      )}
+      <input
+        value={paymentAmount}
+        onChange={(event) => setPaymentAmount(event.target.value)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+        placeholder="Amount paid"
+        type="number"
+      />
 
-      {selectedPaymentDetails.phone_number && (
-        <div>
-          <p className="text-xs font-bold uppercase text-slate-500">
-            Phone Number
-          </p>
-          <p className="mt-1 font-black text-slate-800">
-            {selectedPaymentDetails.phone_number}
-          </p>
-        </div>
-      )}
+      <select
+        value={paymentMethod}
+        onChange={(event) => setPaymentMethod(event.target.value)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+      >
+        {paymentMethodDetails.length === 0 ? (
+          <>
+            <option value="MTN Mobile Money">MTN Mobile Money</option>
+            <option value="Orange Money">Orange Money</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Cash">Cash</option>
+            <option value="USDT">USDT</option>
+          </>
+        ) : (
+          paymentMethodDetails.map((method) => (
+            <option key={method.id} value={method.method_name}>
+              {method.display_name}
+            </option>
+          ))
+        )}
+      </select>
 
-      {selectedPaymentDetails.account_number && (
-        <div>
-          <p className="text-xs font-bold uppercase text-slate-500">
-            Account / Wallet
-          </p>
-          <p className="mt-1 break-all font-black text-slate-800">
-            {selectedPaymentDetails.account_number}
-          </p>
-        </div>
-      )}
+      <input
+        value={paymentReference}
+        onChange={(event) => setPaymentReference(event.target.value)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none"
+        placeholder="Transaction reference"
+      />
 
-      {selectedPaymentDetails.bank_name && (
-        <div>
-          <p className="text-xs font-bold uppercase text-slate-500">
-            Bank Name
-          </p>
-          <p className="mt-1 font-black text-slate-800">
-            {selectedPaymentDetails.bank_name}
-          </p>
-        </div>
-      )}
-
-      {selectedPaymentDetails.branch_name && (
-        <div>
-          <p className="text-xs font-bold uppercase text-slate-500">
-            Branch
-          </p>
-          <p className="mt-1 font-black text-slate-800">
-            {selectedPaymentDetails.branch_name}
-          </p>
-        </div>
-      )}
-
-      {selectedPaymentDetails.wallet_provider && (
-        <div>
-          <p className="text-xs font-bold uppercase text-slate-500">
-            Provider / Network
-          </p>
-          <p className="mt-1 font-black text-slate-800">
-            {selectedPaymentDetails.wallet_provider}
-          </p>
-        </div>
-      )}
+      <input
+        type="file"
+        accept="image/*,.pdf"
+        onChange={(event) => setPaymentReceipt(event.target.files?.[0] || null)}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none md:col-span-2"
+      />
     </div>
 
-    {selectedPaymentDetails.instructions && (
-      <div className="mt-5 rounded-2xl bg-white p-4 text-sm font-semibold leading-6 text-slate-700">
-        {selectedPaymentDetails.instructions}
+    {selectedPaymentDetails && (
+      <div className="mt-6 rounded-3xl border border-[#0D2D6E]/10 bg-slate-50 p-6">
+        <h3 className="text-xl font-black text-[#0D2D6E]">
+          {selectedPaymentDetails.display_name} Details
+        </h3>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {selectedPaymentDetails.account_name && (
+            <div>
+              <p className="text-xs font-bold uppercase text-slate-500">
+                Account Name
+              </p>
+              <p className="mt-1 font-black text-slate-800">
+                {selectedPaymentDetails.account_name}
+              </p>
+            </div>
+          )}
+
+          {selectedPaymentDetails.phone_number && (
+            <div>
+              <p className="text-xs font-bold uppercase text-slate-500">
+                Phone Number
+              </p>
+              <p className="mt-1 font-black text-slate-800">
+                {selectedPaymentDetails.phone_number}
+              </p>
+            </div>
+          )}
+
+          {selectedPaymentDetails.account_number && (
+            <div>
+              <p className="text-xs font-bold uppercase text-slate-500">
+                Account / Wallet
+              </p>
+              <p className="mt-1 break-all font-black text-slate-800">
+                {selectedPaymentDetails.account_number}
+              </p>
+            </div>
+          )}
+
+          {selectedPaymentDetails.bank_name && (
+            <div>
+              <p className="text-xs font-bold uppercase text-slate-500">
+                Bank Name
+              </p>
+              <p className="mt-1 font-black text-slate-800">
+                {selectedPaymentDetails.bank_name}
+              </p>
+            </div>
+          )}
+
+          {selectedPaymentDetails.branch_name && (
+            <div>
+              <p className="text-xs font-bold uppercase text-slate-500">
+                Branch
+              </p>
+              <p className="mt-1 font-black text-slate-800">
+                {selectedPaymentDetails.branch_name}
+              </p>
+            </div>
+          )}
+
+          {selectedPaymentDetails.wallet_provider && (
+            <div>
+              <p className="text-xs font-bold uppercase text-slate-500">
+                Provider / Network
+              </p>
+              <p className="mt-1 font-black text-slate-800">
+                {selectedPaymentDetails.wallet_provider}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {selectedPaymentDetails.instructions && (
+          <div className="mt-5 rounded-2xl bg-white p-4 text-sm font-semibold leading-6 text-slate-700">
+            {selectedPaymentDetails.instructions}
+          </div>
+        )}
       </div>
     )}
-  </div>
-)}
 
-            {paymentMessage && <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-700">{paymentMessage}</div>}
+    {paymentMessage && (
+      <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-700">
+        {paymentMessage}
+      </div>
+    )}
 
-            <Button onClick={submitPayment} disabled={submittingPayment} className="mt-6 px-6 py-3">
-              {submittingPayment ? "Submitting..." : "Submit Payment"}
-            </Button>
-          </CardContent>
-        </Card>
-
+    <Button
+      onClick={submitPayment}
+      disabled={submittingPayment}
+      className="mt-6 px-6 py-3"
+    >
+      {submittingPayment ? "Submitting..." : "Submit Payment"}
+    </Button>
+  </CardContent>
+</Card>
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
             <h2 className="text-2xl font-black text-[var(--capd-navy)]">Payment History</h2>
