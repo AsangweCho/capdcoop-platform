@@ -28,6 +28,15 @@ type Payment = {
   receipt_path: string | null;
   created_at: string;
   members?: Member;
+    approved_at?: string | null;
+  approved_by?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  edit_reason?: string | null;
+  is_deleted?: boolean | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  delete_reason?: string | null;
   registered_by_agent_id: string | null;
 total_shares: number | null;
 portfolio_value: number | null;
@@ -48,6 +57,17 @@ export default function PaymentModule({
 
   const [approvingId, setApprovingId] = useState("");
 
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+const [updatingPayment, setUpdatingPayment] = useState(false);
+const [deletingPaymentId, setDeletingPaymentId] = useState("");
+
+const [editPaymentAmount, setEditPaymentAmount] = useState("");
+const [editPaymentMethod, setEditPaymentMethod] = useState("");
+const [editPaymentType, setEditPaymentType] = useState("");
+const [editPaymentReference, setEditPaymentReference] = useState("");
+const [editPaymentStatus, setEditPaymentStatus] = useState("");
+const [editPaymentReason, setEditPaymentReason] = useState("");
+
   const [message, setMessage] = useState("");
 
   const [creatingPayment, setCreatingPayment] = useState(false);
@@ -64,6 +84,7 @@ export default function PaymentModule({
     currentAdmin?.role === "super_admin" ||
     currentAdmin?.role === "admin" ||
     currentAdmin?.role === "finance";
+ const isSuperAdmin = currentAdmin?.role === "super_admin";
 
   async function loadPayments() {
     setLoadingPayments(true);
@@ -81,6 +102,7 @@ members (
   portfolio_value
 )
       `)
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -191,82 +213,39 @@ members (
     setCreatingPayment(false);
   }
 
-async function approvePayment(payment: Payment) {
-  if (!canManagePayments) return;
+async function createAgentCommissionForPayment(payment: Payment) {
+  const member = payment.members;
 
-  setApprovingId(payment.id);
+  if (!member) return;
 
-  try {
-    const { error } = await supabase
-      .from("payments")
-      .update({
-        payment_status: "approved",
-      })
-      .eq("id", payment.id);
+  let commissionAgentId = member.registered_by_agent_id || null;
 
-    if (error) {
-      console.error(error);
-      setMessage("Failed to approve payment.");
-      setApprovingId("");
-      return;
+  if (!commissionAgentId && member.agent_code) {
+    const { data: agentByCode, error: agentByCodeError } = await supabase
+      .from("agents")
+      .select("id")
+      .eq("agent_code", member.agent_code)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (agentByCodeError) {
+      console.error(agentByCodeError);
     }
 
-    const member = payment.members;
+    if (agentByCode?.id) {
+      commissionAgentId = agentByCode.id;
 
-    // SHARE PURCHASE LOGIC
-    if (payment.payment_type === "share_purchase" && member) {
-      const sharesBought = Math.floor(Number(payment.amount) / SHARE_PRICE);
-
-      const updatedShares =
-        Number(member.total_shares || 0) + sharesBought;
-
-      const updatedPortfolio =
-        Number(member.portfolio_value || 0) + Number(payment.amount);
-
-      const { error: memberError } = await supabase
+      await supabase
         .from("members")
         .update({
-          total_shares: updatedShares,
-          portfolio_value: updatedPortfolio,
+          registered_by_agent_id: agentByCode.id,
         })
         .eq("id", member.id);
-
-      if (memberError) {
-        console.error(memberError);
-        setMessage(memberError.message);
-        setApprovingId("");
-        return;
-      }
     }
-
-    // AGENT COMMISSION LOGIC
-let commissionAgentId = member?.registered_by_agent_id || null;
-
-if (!commissionAgentId && member?.agent_code) {
-  const { data: agentByCode, error: agentByCodeError } = await supabase
-    .from("agents")
-    .select("id")
-    .eq("agent_code", member.agent_code)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (agentByCodeError) {
-    console.error(agentByCodeError);
   }
 
-  if (agentByCode?.id) {
-    commissionAgentId = agentByCode.id;
+  if (!commissionAgentId) return;
 
-    await supabase
-      .from("members")
-      .update({
-        registered_by_agent_id: agentByCode.id,
-      })
-      .eq("id", member.id);
-  }
-}
-
-if (commissionAgentId && member) {
   const { data: existingCommission, error: existingCommissionError } =
     await supabase
       .from("agent_commissions")
@@ -278,58 +257,106 @@ if (commissionAgentId && member) {
     console.error(existingCommissionError);
   }
 
-  if (!existingCommission) {
-    const { data: agentData, error: agentError } = await supabase
-      .from("agents")
-      .select("id, commission_rate, status")
-      .eq("id", commissionAgentId)
-      .maybeSingle();
+  if (existingCommission) return;
 
-    if (agentError) {
-      console.error(agentError);
-    }
+  const { data: agentData, error: agentError } = await supabase
+    .from("agents")
+    .select("id, commission_rate, status")
+    .eq("id", commissionAgentId)
+    .maybeSingle();
 
-    if (agentData && agentData.status === "active") {
-      const rate = Number(agentData.commission_rate || 10);
-      const baseAmount = Number(payment.amount || 0);
-      const commissionAmount = baseAmount * (rate / 100);
+  if (agentError) {
+    console.error(agentError);
+    return;
+  }
 
-      const { error: commissionError } = await supabase
-        .from("agent_commissions")
-        .insert({
-          agent_id: agentData.id,
-          member_id: member.id,
-          payment_id: payment.id,
-          commission_type:
-            payment.payment_type === "share_purchase"
-              ? "share_purchase"
-              : "registration",
-          base_amount: baseAmount,
-          commission_rate: rate,
-          commission_amount: commissionAmount,
-          status: "pending",
-        });
+  if (!agentData || agentData.status !== "active") return;
 
-      if (commissionError) {
-        console.error(commissionError);
-        setMessage(
-          "Payment approved, but commission could not be created."
-        );
-      }
-    }
+  const rate = Number(agentData.commission_rate || 10);
+  const baseAmount = Number(payment.amount || 0);
+  const commissionAmount = baseAmount * (rate / 100);
+
+  const { error: commissionError } = await supabase
+    .from("agent_commissions")
+    .insert({
+      agent_id: agentData.id,
+      member_id: member.id,
+      payment_id: payment.id,
+      commission_type:
+        payment.payment_type === "share_purchase"
+          ? "share_purchase"
+          : "registration",
+      base_amount: baseAmount,
+      commission_rate: rate,
+      commission_amount: commissionAmount,
+      status: "pending",
+    });
+
+  if (commissionError) {
+    console.error(commissionError);
+    setMessage("Payment approved, but commission could not be created.");
   }
 }
 
-    setPayments((prev) =>
-      prev.map((p) =>
-        p.id === payment.id
-          ? {
-              ...p,
-              payment_status: "approved",
-            }
-          : p
-      )
-    );
+async function approvePayment(payment: Payment) {
+  if (!canManagePayments) return;
+
+  setApprovingId(payment.id);
+  setMessage("");
+
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (payment.payment_type === "share_purchase") {
+      const { data, error } = await supabase.rpc(
+        "post_approved_member_share_payment",
+        {
+          p_payment_id: payment.id,
+          p_approved_by: user?.id || null,
+        }
+      );
+
+      if (error) {
+        console.error(error);
+        setMessage(error.message);
+        setApprovingId("");
+        return;
+      }
+
+      await createAgentCommissionForPayment(payment);
+
+      console.log("Share payment posting result:", data);
+
+      await loadPayments();
+
+      setMessage("Share purchase payment approved and posted successfully.");
+      setApprovingId("");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("payments")
+      .update({
+        payment_status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: user?.id || null,
+        updated_at: new Date().toISOString(),
+        updated_by: user?.id || null,
+      })
+      .eq("id", payment.id);
+
+    if (error) {
+      console.error(error);
+      setMessage("Failed to approve payment.");
+      setApprovingId("");
+      return;
+    }
+
+    await createAgentCommissionForPayment(payment);
+
+    await loadPayments();
 
     setMessage("Payment approved successfully.");
   } catch (err) {
@@ -338,6 +365,129 @@ if (commissionAgentId && member) {
   }
 
   setApprovingId("");
+}
+
+function openEditPayment(payment: Payment) {
+  setEditingPayment(payment);
+  setEditPaymentAmount(String(payment.amount || ""));
+  setEditPaymentMethod(payment.payment_method || "cash");
+  setEditPaymentType(payment.payment_type || "share_purchase");
+  setEditPaymentReference(payment.reference || "");
+  setEditPaymentStatus(payment.payment_status || "pending");
+  setEditPaymentReason("");
+}
+
+function closeEditPayment() {
+  setEditingPayment(null);
+  setEditPaymentAmount("");
+  setEditPaymentMethod("");
+  setEditPaymentType("");
+  setEditPaymentReference("");
+  setEditPaymentStatus("");
+  setEditPaymentReason("");
+}
+
+async function updatePaymentAsSuperAdmin() {
+  if (!editingPayment || !isSuperAdmin) return;
+
+  const amount = Number(editPaymentAmount || 0);
+
+  if (amount <= 0) {
+    setMessage("Payment amount must be greater than zero.");
+    return;
+  }
+
+  if (!editPaymentReason.trim()) {
+    setMessage("Edit reason is required.");
+    return;
+  }
+
+  setUpdatingPayment(true);
+  setMessage("");
+
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { error } = await supabase.rpc("admin_update_payment", {
+      p_payment_id: editingPayment.id,
+      p_amount: amount,
+      p_payment_method: editPaymentMethod,
+      p_payment_type: editPaymentType,
+      p_reference: editPaymentReference || null,
+      p_payment_status: editPaymentStatus,
+      p_edit_reason: editPaymentReason,
+      p_performed_by: user?.id || null,
+    });
+
+    if (error) {
+      console.error(error);
+      setMessage(error.message);
+      setUpdatingPayment(false);
+      return;
+    }
+
+    await loadPayments();
+    closeEditPayment();
+
+    setMessage("Payment updated successfully.");
+  } catch (err) {
+    console.error(err);
+    setMessage("Unexpected payment update error.");
+  }
+
+  setUpdatingPayment(false);
+}
+
+async function deletePaymentAsSuperAdmin(payment: Payment) {
+  if (!isSuperAdmin) return;
+
+  const reason = window.prompt(
+    "Enter the reason for deleting this payment. This will be audited."
+  );
+
+  if (!reason || !reason.trim()) {
+    setMessage("Delete reason is required.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this payment? It will be hidden but kept in audit history."
+  );
+
+  if (!confirmed) return;
+
+  setDeletingPaymentId(payment.id);
+  setMessage("");
+
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { error } = await supabase.rpc("admin_soft_delete_payment", {
+      p_payment_id: payment.id,
+      p_delete_reason: reason,
+      p_performed_by: user?.id || null,
+    });
+
+    if (error) {
+      console.error(error);
+      setMessage(error.message);
+      setDeletingPaymentId("");
+      return;
+    }
+
+    await loadPayments();
+
+    setMessage("Payment deleted successfully.");
+  } catch (err) {
+    console.error(err);
+    setMessage("Unexpected payment delete error.");
+  }
+
+  setDeletingPaymentId("");
 }
 
 async function openReceipt(path: string) {
@@ -354,7 +504,8 @@ async function openReceipt(path: string) {
   window.open(data.signedUrl, "_blank");
 }
 
-  return (
+return (
+  <>
     <Card className="mt-6 border-slate-200 bg-white shadow-sm">
       <CardContent>
         <h2 className="text-3xl font-black text-[#0D2D6E]">
@@ -410,10 +561,9 @@ async function openReceipt(path: string) {
                 <option value="share_purchase">
                   Share Purchase
                 </option>
-
-                <option value="loan_repayment">
-                  Loan Repayment
-                </option>
+<option value="loan_repayment">
+  Aid Repayment
+</option>
 
                 <option value="registration">
                   Registration
@@ -559,27 +709,41 @@ async function openReceipt(path: string) {
                       ).toLocaleDateString()}
                     </td>
 
-                    <td className="py-4">
-                      {payment.payment_status ===
-                      "pending" ? (
-                        <Button
-                          onClick={() =>
-                            approvePayment(payment)
-                          }
-                          disabled={
-                            approvingId === payment.id
-                          }
-                        >
-                          {approvingId === payment.id
-                            ? "Approving..."
-                            : "Approve"}
-                        </Button>
-                      ) : (
-                        <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
-                          Approved
-                        </span>
-                      )}
-                    </td>
+<td className="py-4">
+  <div className="flex flex-wrap gap-2">
+    {payment.payment_status === "pending" ? (
+      <Button
+        onClick={() => approvePayment(payment)}
+        disabled={approvingId === payment.id}
+      >
+        {approvingId === payment.id ? "Approving..." : "Approve"}
+      </Button>
+    ) : (
+      <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
+        Approved
+      </span>
+    )}
+
+    {isSuperAdmin && (
+      <>
+        <button
+          onClick={() => openEditPayment(payment)}
+          className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600"
+        >
+          Edit
+        </button>
+
+        <button
+          onClick={() => deletePaymentAsSuperAdmin(payment)}
+          disabled={deletingPaymentId === payment.id}
+          className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+        >
+          {deletingPaymentId === payment.id ? "Deleting..." : "Delete"}
+        </button>
+      </>
+    )}
+  </div>
+</td>
                   </tr>
                 ))}
               </tbody>
@@ -587,6 +751,108 @@ async function openReceipt(path: string) {
           </div>
         )}
       </CardContent>
-    </Card>
-  );
+       </Card>
+
+    {editingPayment && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-2xl font-black text-[#0D2D6E]">
+                Edit Payment
+              </h3>
+              <p className="mt-2 text-sm font-semibold text-slate-500">
+                Super Admin correction. A reason is required and the action will be audited.
+              </p>
+            </div>
+
+            <button
+              onClick={closeEditPayment}
+              className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-5 md:grid-cols-2">
+            <input
+              type="number"
+              value={editPaymentAmount}
+              onChange={(e) => setEditPaymentAmount(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+              placeholder="Amount"
+            />
+
+            <select
+              value={editPaymentMethod}
+              onChange={(e) => setEditPaymentMethod(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            >
+              <option value="cash">Cash</option>
+              <option value="momo">Mobile Money</option>
+              <option value="bank">Bank Transfer</option>
+              <option value="card">Card Payment</option>
+              <option value="Orange Money">Orange Money</option>
+              <option value="Card Payment">Card Payment</option>
+            </select>
+
+            <select
+              value={editPaymentType}
+              onChange={(e) => setEditPaymentType(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            >
+              <option value="share_purchase">Share Purchase</option>
+              <option value="loan_repayment">Aid Repayment</option>
+              <option value="registration">Registration</option>
+              <option value="savings">Savings</option>
+              <option value="other">Other</option>
+            </select>
+
+            <select
+              value={editPaymentStatus}
+              onChange={(e) => setEditPaymentStatus(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            >
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+
+            <input
+              type="text"
+              value={editPaymentReference}
+              onChange={(e) => setEditPaymentReference(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 md:col-span-2"
+              placeholder="Reference"
+            />
+
+            <textarea
+              value={editPaymentReason}
+              onChange={(e) => setEditPaymentReason(e.target.value)}
+              className="min-h-28 rounded-2xl border border-slate-200 bg-white px-4 py-3 md:col-span-2"
+              placeholder="Reason for correction"
+            />
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button
+              onClick={updatePaymentAsSuperAdmin}
+              disabled={updatingPayment}
+              className="px-6 py-3"
+            >
+              {updatingPayment ? "Saving..." : "Save Correction"}
+            </Button>
+
+            <button
+              onClick={closeEditPayment}
+              className="rounded-2xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
+);
 }
