@@ -593,7 +593,7 @@ const selectedPaymentDetails = paymentMethodDetails.find(
             <h2 className="text-2xl font-black text-[var(--capd-navy)]">My Financial Aid</h2>
 
             {memberLoans.length === 0 ? (
-              <p className="mt-6 font-semibold text-slate-600">Active Loans: FCFA 0. You do not have any loan record yet.</p>
+             <p className="mt-6 font-semibold text-slate-600">Active Aid: FCFA 0. You do not have any financial aid record yet.</p>
             ) : (
               <SimpleTable
                 headers={["Business", "Principal", "Expected", "Repaid", "Balance", "Daily", "Status", "Date"]}

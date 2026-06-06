@@ -474,7 +474,7 @@ const commissionReport = agents.map((agent) => {
         <MetricCard title="Collection Variance" value={`FCFA ${totalVariance.toLocaleString()}`} />
         <MetricCard title="Treasury Variance" value={`FCFA ${treasuryVariance.toLocaleString()}`} />
         <MetricCard title="Savings" value={`FCFA ${totalSavings.toLocaleString()}`} />
-        <MetricCard title="Loans" value={`FCFA ${totalLoans.toLocaleString()}`} />
+        <MetricCard title="Aid Repayments" value={`FCFA ${totalLoans.toLocaleString()}`} />
         <MetricCard title="Shares" value={`FCFA ${totalShares.toLocaleString()}`} />
         <MetricCard title="Pending Collections" value={pendingCollections.length.toString()} />
         <MetricCard title="Pending Commission" value={`FCFA ${pendingCommissions.toLocaleString()}`} />

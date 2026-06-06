@@ -142,12 +142,12 @@ const { data, error } = await supabase
 
   async function saveRecoveryNote() {
     if (!selectedLoanId) {
-      setMessage("Select an overdue loan first.");
+     setMessage("Select an overdue aid record first.");
       return;
     }
 
     if (!note.trim()) {
-      setMessage("Recovery note is required.");
+      setMessage("Aid recovery note is required.");
       return;
     }
 
@@ -168,7 +168,7 @@ const { data, error } = await supabase
       return;
     }
 
-    setMessage("Recovery note saved.");
+    setMessage("Aid recovery note saved.");
     setSelectedLoanId("");
     setSelectedMemberId("");
     setAssignedTo("");
@@ -196,8 +196,8 @@ const { data, error } = await supabase
   return (
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard title="Total Arrears" value={`FCFA ${totalArrears.toLocaleString()}`} />
-        <MetricCard title="Overdue Arrears" value={`FCFA ${overdueArrears.toLocaleString()}`} />
+        <MetricCard title="Total Aid Arrears" value={`FCFA ${totalArrears.toLocaleString()}`} />
+        <MetricCard title="Overdue Aid Arrears" value={`FCFA ${overdueArrears.toLocaleString()}`} />
         <MetricCard title="Overdue Installments" value={overdueRows.length.toString()} />
         <MetricCard title="Partial Installments" value={partialRows.length.toString()} />
       </div>
@@ -217,7 +217,7 @@ const { data, error } = await supabase
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Arrears & Recovery Queue
+         Aid Arrears & Recovery Queue
           </h2>
 
           <div className="mt-6 overflow-x-auto">
@@ -229,7 +229,7 @@ const { data, error } = await supabase
                   <th className="py-4">Due Date</th>
                   <th className="py-4">Expected</th>
                   <th className="py-4">Paid</th>
-                  <th className="py-4">Arrears</th>
+                  <th className="py-4">Aid Arrears</th>
                   <th className="py-4">Status</th>
                   <th className="py-4">Action</th>
                 </tr>
@@ -293,7 +293,7 @@ const { data, error } = await supabase
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Recovery Follow-up Note
+            Aid Recovery Follow-up Note
           </h2>
 
           <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -332,13 +332,13 @@ const { data, error } = await supabase
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Recovery note / client response / next action"
+              placeholder="Aid recovery note / member response / next action"
               className="min-h-32 rounded-2xl border border-slate-200 bg-white px-4 py-3 md:col-span-2"
             />
           </div>
 
           <Button onClick={saveRecoveryNote} className="mt-6 px-6 py-3">
-            Save Recovery Note
+            Save Aid Recovery Note
           </Button>
         </CardContent>
       </Card>
@@ -346,13 +346,13 @@ const { data, error } = await supabase
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Recent Recovery Notes
+            Recent Aid Recovery Notes
           </h2>
 
           <div className="mt-6 space-y-4">
             {recoveryNotes.length === 0 ? (
               <p className="font-semibold text-slate-600">
-                No recovery notes yet.
+                No aid recovery notes yet.
               </p>
             ) : (
               recoveryNotes.slice(0, 10).map((item) => (
