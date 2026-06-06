@@ -425,7 +425,7 @@ setPaymentMethodDetails(paymentMethodData || []);
     { title: "Share Portfolio Value", value: `FCFA ${Number(member.portfolio_value).toLocaleString()}`, note: "Current records", icon: WalletCards },
     { title: "Declared Dividends", value: `FCFA ${Number(member.declared_dividends).toLocaleString()}`, note: "Official declarations only", icon: BadgeDollarSign },
     { title: "Savings Balance", value: `FCFA ${Number(savingsSummary.available).toLocaleString()}`, note: `Net after 2%: FCFA ${Number(savingsSummary.netAfterDeduction).toLocaleString()}`, icon: PiggyBank },
-    { title: "Active Loans", value: `FCFA ${Number(loanSummary.outstandingBalance || loanSummary.activePrincipal).toLocaleString()}`, note: `${loanSummary.activeCount} active loan(s)`, icon: HandCoins },
+    { title: "Active Aid", value: `FCFA ${Number(loanSummary.outstandingBalance || loanSummary.activePrincipal).toLocaleString()}`, note: `${loanSummary.activeCount} active aid record(s)`, icon: HandCoins },
     { title: "Pending Payments", value: `FCFA ${Number(pendingPaymentsTotal).toLocaleString()}`, note: "Awaiting admin validation", icon: ReceiptText },
     { title: "Monthly Deduction", value: `FCFA ${Number(savingsSummary.projectedDeduction).toLocaleString()}`, note: "Projected savings fee", icon: TrendingDown },
     { title: "Membership Status", value: member.membership_status, note: member.member_number, icon: LayoutDashboard },
@@ -590,7 +590,7 @@ const selectedPaymentDetails = paymentMethodDetails.find(
 
         <Card className="mt-8 border-slate-200 bg-white shadow-sm">
           <CardContent className="p-8">
-            <h2 className="text-2xl font-black text-[var(--capd-navy)]">My Loans</h2>
+            <h2 className="text-2xl font-black text-[var(--capd-navy)]">My Financial Aid</h2>
 
             {memberLoans.length === 0 ? (
               <p className="mt-6 font-semibold text-slate-600">Active Loans: FCFA 0. You do not have any loan record yet.</p>
