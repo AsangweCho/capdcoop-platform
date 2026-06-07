@@ -109,7 +109,7 @@ export default function AdminDashboard() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="members">Members</TabsTrigger>
-            <TabsTrigger value="loans">Loans</TabsTrigger>
+            <TabsTrigger value="loans">Aid</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
             <TabsTrigger value="collections">Collections</TabsTrigger>
             <TabsTrigger value="savings">Savings</TabsTrigger>

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Local database backups
 backups/
+
+# Local storage backups
+storage-backups/

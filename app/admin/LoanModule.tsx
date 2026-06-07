@@ -211,7 +211,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setMessage(error.message || "Failed to load loans.");
+      setMessage(error.message || "Failed to load aid records.");
       setLoans([]);
       setLoadingLoans(false);
       return;
@@ -239,12 +239,12 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
   async function createLoan() {
     if (!canManageLoans) {
-      setMessage("You do not have permission to create loans.");
+      setMessage("You do not have permission to create aid records.");
       return;
     }
 
     if (!newLoan.member_id || !newLoan.loan_amount || !newLoan.duration_days) {
-      setMessage("Please select a member, enter loan amount, and duration.");
+     setMessage("Please select a member, enter aid amount, and duration.");
       return;
     }
 
@@ -252,7 +252,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     const durationDays = Number(newLoan.duration_days);
 
     if (Number.isNaN(principal) || principal <= 0) {
-      setMessage("Loan amount must be greater than zero.");
+      setMessage("Aid amount must be greater than zero.");
       return;
     }
 
@@ -301,12 +301,12 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     });
 
     if (error) {
-      setMessage(error.message || "Failed to create loan.");
+      setMessage(error.message || "Failed to create aid record.");
       setCreatingLoan(false);
       return;
     }
 
-    setMessage("Loan created and sent for approval.");
+    setMessage("Aid record created and sent for approval.");
     setNewLoan(emptyNewLoan);
 
     await loadLoans();
@@ -329,14 +329,14 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     setSelectedLoanSchedule((data as RepaymentScheduleRow[]) || []);
 
     if (!data || data.length === 0) {
-      setMessage("No repayment schedule found for this loan yet.");
+    setMessage("No repayment schedule found for this aid record yet.");
     }
   }
 
   async function approveLoan(loan: Loan) {
     if (!canManageLoans) return;
 
-    const confirmed = window.confirm("Approve this loan?");
+    const confirmed = window.confirm("Approve this aid record?");
     if (!confirmed) return;
 
     setActionLoanId(loan.id);
@@ -357,7 +357,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    setMessage("Loan approved successfully.");
+    setMessage("Aid record approved successfully.");
     await loadLoans();
   }
 
@@ -365,7 +365,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     if (!canManageLoans) return;
 
     const confirmed = window.confirm(
-      "Confirm that this loan has been disbursed and should become active?"
+      "Confirm that this aid record has been disbursed and should become active?"
     );
 
     if (!confirmed) return;
@@ -444,14 +444,14 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     }
 
     setActionLoanId(null);
-    setMessage("Loan disbursed, activated, and repayment schedule generated.");
+    setMessage("Aid disbursed, activated, and repayment schedule generated.");
     await loadLoans();
   }
 
   async function rejectLoan(loan: Loan) {
     if (!canManageLoans) return;
 
-    const reason = window.prompt("Reason for rejecting this loan?");
+   const reason = window.prompt("Reason for rejecting this aid record?");
     if (reason === null) return;
 
     setActionLoanId(loan.id);
@@ -472,14 +472,14 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    setMessage("Loan rejected.");
+  setMessage("Aid record rejected.");
     await loadLoans();
   }
 
   async function closeLoan(loan: Loan) {
     if (!canManageLoans) return;
 
-    const confirmed = window.confirm("Close this loan manually?");
+    const confirmed = window.confirm("Close this aid record manually?");
     if (!confirmed) return;
 
     setActionLoanId(loan.id);
@@ -501,13 +501,13 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    setMessage("Loan closed.");
+    setMessage("Aid record closed.");
     await loadLoans();
   }
 
   function openEditLoanModal(loan: Loan) {
     if (!isSuperAdmin) {
-      setMessage("Only a Super Admin can edit loan records.");
+      setMessage("Only a Super Admin can edit aid records.");
       return;
     }
 
@@ -531,14 +531,14 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
   async function updateLoan() {
     if (!isSuperAdmin) {
-      setMessage("Only a Super Admin can edit loan records.");
+      setMessage("Only a Super Admin can edit aid records.");
       return;
     }
 
     if (!editingLoan) return;
 
     if (!editLoan.member_id) {
-      setMessage("Please select a member for this loan.");
+      setMessage("Please select a member for this aid record.");
       return;
     }
 
@@ -547,7 +547,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     const reason = editLoan.reason.trim();
 
     if (Number.isNaN(principal) || principal <= 0) {
-      setMessage("Loan amount must be greater than zero.");
+      setMessage("Aid amount must be greater than zero.");
       return;
     }
 
@@ -557,7 +557,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     }
 
     if (!reason) {
-      setMessage("Please enter a reason for editing this loan.");
+      setMessage("Please enter a reason for editing this aid record.");
       return;
     }
 
@@ -571,7 +571,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       ["active", "closed"].includes(editingLoan.status)
     ) {
       const confirmed = window.confirm(
-        "This loan is already active or closed. Editing principal or duration will update the loan totals, but it will not automatically rebuild paid repayment history. Continue?"
+        "This aid record is already active or closed. Editing principal or duration will update the aid totals, but it will not automatically rebuild paid repayment history. Continue?"
       );
 
       if (!confirmed) return;
@@ -635,7 +635,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       .eq("id", editingLoan.id);
 
     if (error) {
-      setMessage(error.message || "Failed to update loan.");
+      setMessage(error.message || "Failed to update aid record.");
       setSavingEdit(false);
       return;
     }
@@ -654,35 +654,35 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     if (auditError) {
       setMessage(
-        `Loan updated successfully, but audit log was not saved: ${auditError.message}`
+        `Aid record updated successfully, but audit log was not saved: ${auditError.message}`
       );
       return;
     }
 
-    setMessage("Loan updated successfully.");
+    setMessage("Aid record updated successfully.");
   }
 
   async function deleteLoan(loan: Loan) {
     if (!isSuperAdmin) {
-      setMessage("Only a Super Admin can delete loan records.");
+      setMessage("Only a Super Admin can delete aid records.");
       return;
     }
 
     const confirmed = window.confirm(
-      "Delete this loan? It will be hidden from the Loan Management table but kept in the database for audit history."
+      "Delete this aid record? It will be hidden from the Aid Management table but kept in the database for audit history."
     );
 
     if (!confirmed) return;
 
     if (Number(loan.amount_repaid || 0) > 0) {
       const financialConfirm = window.confirm(
-        "This loan already has repayments recorded. Deleting it will hide it from the table, but the audit history will remain. Continue?"
+        "This aid record already has repayments recorded. Deleting it will hide it from the table, but the audit history will remain. Continue?"
       );
 
       if (!financialConfirm) return;
     }
 
-    const reason = window.prompt("Reason for deleting this loan?");
+    const reason = window.prompt("Reason for deleting this aid record?");
 
     if (!reason || !reason.trim()) {
       setMessage("Delete reason is required.");
@@ -708,7 +708,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       .eq("id", loan.id);
 
     if (error) {
-      setMessage(error.message || "Failed to delete loan.");
+      setMessage(error.message || "Failed to delete aid record.");
       setActionLoanId(null);
       return;
     }
@@ -732,12 +732,12 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     if (auditError) {
       setMessage(
-        `Loan deleted successfully, but audit log was not saved: ${auditError.message}`
+        `Aid record deleted successfully, but audit log was not saved: ${auditError.message}`
       );
       return;
     }
 
-    setMessage("Loan deleted successfully.");
+    setMessage("Aid record deleted successfully.");
   }
 
   function statusStyle(status: string) {
@@ -782,7 +782,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
   return (
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard title="Total Loans" value={loanStats.totalLoans.toString()} />
+        <MetricCard title="Total Aid Records" value={loanStats.totalLoans.toString()} />
         <MetricCard
           title="Pending Review"
           value={loanStats.pendingLoans.toString()}
@@ -791,7 +791,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
           title="Approved Awaiting Disbursement"
           value={loanStats.approvedLoans.toString()}
         />
-        <MetricCard title="Active Loans" value={loanStats.activeLoans.toString()} />
+        <MetricCard title="Active Aid Records" value={loanStats.activeLoans.toString()} />
         <MetricCard
           title="Principal Created"
           value={`FCFA ${loanStats.totalPrincipal.toLocaleString()}`}
@@ -809,7 +809,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-            Create New Loan
+           Create New Aid Record
           </h2>
 
           {message && (
@@ -851,7 +851,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                   setNewLoan({ ...newLoan, loan_amount: e.target.value })
                 }
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-                placeholder="Loan amount"
+                placeholder="Aid amount"
               />
 
               <input
@@ -870,18 +870,18 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                   setNewLoan({ ...newLoan, purpose: e.target.value })
                 }
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none md:col-span-2"
-                placeholder="Purpose of loan"
+                placeholder="Purpose of aid"
               />
             </div>
           ) : (
             <p className="mt-6 font-semibold text-slate-600">
-              You do not have permission to create loans.
+             You do not have permission to create aid records.
             </p>
           )}
 
           <div className="mt-6 rounded-3xl bg-slate-50 p-6">
             <p className="text-sm font-black uppercase tracking-widest text-slate-500">
-              Loan Computation Preview
+              Aid Computation Preview
             </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-5">
@@ -916,7 +916,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
             disabled={creatingLoan || !canManageLoans}
             className="mt-6 px-6 py-3"
           >
-            {creatingLoan ? "Creating..." : "Create Loan"}
+            {creatingLoan ? "Creating..." : "Create Aid"}
           </Button>
         </CardContent>
       </Card>
@@ -926,7 +926,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-black text-[#0D2D6E]">
-                Loan Management
+                Aid Management
               </h2>
               {isSuperAdmin && (
                 <p className="mt-2 text-sm font-semibold text-slate-500">
@@ -938,11 +938,11 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
           {loadingLoans ? (
             <p className="mt-6 font-semibold text-slate-600">
-              Loading loans...
+              Loading aid records...
             </p>
           ) : loans.length === 0 ? (
             <p className="mt-6 font-semibold text-slate-600">
-              No loans created yet.
+              No aid records created yet.
             </p>
           ) : (
             <div className="mt-6 overflow-x-auto">
@@ -1161,7 +1161,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
             {selectedLoanSchedule.length === 0 ? (
               <p className="mt-6 font-semibold text-slate-600">
-                No repayment schedule found for this loan.
+                No repayment schedule found for this aid record.
               </p>
             ) : (
               <div className="mt-6 overflow-x-auto">
@@ -1223,7 +1223,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-black text-[#0D2D6E]">
-                  Edit Loan
+                  Edit Aid Record
                 </h2>
                 <p className="mt-2 text-sm font-semibold text-slate-500">
                   Changes are restricted to Super Admin and saved in the audit log.
@@ -1260,7 +1260,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                 </select>
                 {["active", "closed"].includes(editingLoan.status) && (
                   <p className="mt-2 text-xs font-semibold text-slate-500">
-                    Member cannot be changed for active or closed loans.
+                    Member cannot be changed for active or closed aid records.
                   </p>
                 )}
               </div>
@@ -1290,7 +1290,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                     setEditLoan({ ...editLoan, loan_amount: e.target.value })
                   }
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-                  placeholder="Loan amount"
+                placeholder="Aid amount"
                 />
               </div>
 
@@ -1338,7 +1338,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                     setEditLoan({ ...editLoan, purpose: e.target.value })
                   }
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-                  placeholder="Purpose of loan"
+                  placeholder="Purpose of aid"
                 />
               </div>
 
@@ -1352,7 +1352,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                     setEditLoan({ ...editLoan, reason: e.target.value })
                   }
                   className="min-h-[100px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-                  placeholder="Explain why this loan is being edited"
+                  placeholder="Explain why this aid record is being edited"
                 />
               </div>
             </div>

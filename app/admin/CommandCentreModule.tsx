@@ -400,7 +400,7 @@ export default function CommandCentreModule() {
         <MetricCard title="Collection Variance" value={`FCFA ${todayVariance.toLocaleString()}`} />
         <MetricCard title="Pending Collections" value={pendingCollections.length.toString()} />
         <MetricCard title="Savings" value={`FCFA ${savingsCollected.toLocaleString()}`} />
-        <MetricCard title="Loans" value={`FCFA ${loanCollected.toLocaleString()}`} />
+        <MetricCard title="Aid Repayments" value={`FCFA ${loanCollected.toLocaleString()}`} />
         <MetricCard title="Shares" value={`FCFA ${shareCollected.toLocaleString()}`} />
         <MetricCard title="Cash Handed Over" value={`FCFA ${cashHandedOver.toLocaleString()}`} />
         <MetricCard title="Treasury Variance" value={`FCFA ${treasuryVariance.toLocaleString()}`} />
