@@ -412,7 +412,6 @@ async function loadAidPortfolioSummary() {
       collection_type: collectionType,
       expected_amount: expected,
       collected_amount: collected,
-      variance: collected - expected,
       payment_method: paymentMethod,
       reference: reference.trim() || null,
       status: "pending",
