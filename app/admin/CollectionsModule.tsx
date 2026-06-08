@@ -182,7 +182,7 @@ export default function CollectionsModule() {
   const [memberId, setMemberId] = useState("");
   const [agentId, setAgentId] = useState("");
   const [teamId, setTeamId] = useState("");
-  const [collectionType, setCollectionType] = useState("savings");
+  const [collectionType, setCollectionType] = useState("loan");
   const [expectedAmount, setExpectedAmount] = useState("");
   const [collectedAmount, setCollectedAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -322,7 +322,7 @@ const [aidPortfolioSummary, setAidPortfolioSummary] =
     setMemberId("");
     setAgentId("");
     setTeamId("");
-    setCollectionType("savings");
+    setCollectionType("loan");
     setExpectedAmount("");
     setCollectedAmount("");
     setPaymentMethod("cash");
@@ -938,8 +938,8 @@ const allApprovedCount = allApprovedCollections.length;
               onChange={(e) => setCollectionType(e.target.value)}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
             >
-              <option value="savings">Savings</option>
               <option value="loan">Aid Repayment</option>
+              <option value="savings">Savings</option>
               <option value="share">Share Subscription</option>
             </select>
 
