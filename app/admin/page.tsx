@@ -285,38 +285,38 @@ export default function AdminDashboard() {
   return (
     <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <BrandLogo />
-            <div className="hidden border-l border-slate-200 pl-4 text-sm font-bold text-slate-500 md:block">
-              Admin Control Centre
-            </div>
-          </div>
+  <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+    <div className="flex items-center gap-3">
+      <BrandLogo />
+      <div className="hidden border-l border-slate-200 pl-4 text-sm font-bold text-slate-500 md:block">
+        Admin Control Centre
+      </div>
+    </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right md:block">
-              <p className="text-sm font-black text-[#0D2D6E]">
-                {currentAdmin.full_name || currentAdmin.email}
-              </p>
-              <p className="text-xs font-semibold text-slate-500">
-                {currentAdmin.email}
-              </p>
-            </div>
+    <div className="flex items-center gap-3">
+      <div className="hidden text-right md:block">
+        <p className="text-sm font-black text-[#0D2D6E]">
+          {currentAdminWithPermissions.full_name ||
+            currentAdminWithPermissions.email}
+        </p>
+        <p className="text-xs font-semibold text-slate-500">
+          {currentAdminWithPermissions.email}
+        </p>
+      </div>
 
-            <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
-              {formatRole(currentAdmin.role)}
-            </div>
+      <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
+        {formatRole(currentAdminWithPermissions.role)}
+      </div>
 
-            <Button
-              onClick={handleLogout}
-              className="bg-red-600 px-5 py-3 text-white hover:bg-red-700"
-            >
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
-
+      <Button
+        onClick={handleLogout}
+        className="bg-red-600 px-5 py-3 text-white hover:bg-red-700"
+      >
+        Logout
+      </Button>
+    </div>
+  </div>
+</header>
       <div className="mx-auto max-w-7xl px-6 py-10">
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h1 className="text-2xl font-black text-[#0D2D6E]">
@@ -328,8 +328,8 @@ export default function AdminDashboard() {
           </p>
 
           {!isSuperAdmin && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {currentAdmin.permissions.map((permission) => (
+  <div className="mt-4 flex flex-wrap gap-2">
+    {currentAdminWithPermissions.permissions.map((permission) => (
                 <span
                   key={permission}
                   className="rounded-full bg-green-50 px-3 py-1 text-xs font-black text-green-700"
