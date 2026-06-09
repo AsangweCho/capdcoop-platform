@@ -195,6 +195,14 @@ export default function CollectionsModule() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(today);
 
+const [reversingSavingsCollection, setReversingSavingsCollection] = useState<any | null>(null);
+const [savingsReversalReason, setSavingsReversalReason] = useState("");
+const [reversingSavings, setReversingSavings] = useState(false);
+
+  const [reversingAidCollection, setReversingAidCollection] = useState<any | null>(null);
+const [aidReversalReason, setAidReversalReason] = useState("");
+const [reversingAid, setReversingAid] = useState(false);
+
   const [expectedAidCollectionsToday, setExpectedAidCollectionsToday] = useState<
   ExpectedAidCollection[]
 >([]);
@@ -226,6 +234,117 @@ const [aidPortfolioSummary, setAidPortfolioSummary] =
 
     setIsLoading(false);
   }
+
+const reverseApprovedAidCollection = async () => {
+  if (!reversingAidCollection) {
+    setMessage("No Aid collection selected for reversal.");
+    return;
+  }
+
+  if (!aidReversalReason.trim() || aidReversalReason.trim().length < 10) {
+    setMessage("Please enter a reversal reason of at least 10 characters.");
+    return;
+  }
+
+  try {
+    setReversingAid(true);
+    setMessage("");
+
+    const { data, error } = await supabase.rpc(
+      "admin_reverse_approved_aid_collection",
+      {
+        p_collection_id: reversingAidCollection.id,
+        p_reason: aidReversalReason.trim(),
+      }
+    );
+
+    if (error) {
+      console.error("Error reversing approved Aid collection:", error);
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(
+      data?.message
+        ? `${data.message} ${formatMoney(
+            Number(data.amount_reversed || 0)
+          )} reversed. ${Number(
+            data.schedule_rows_touched || 0
+          )} schedule row(s) restored.`
+        : "Approved Aid collection reversed successfully."
+    );
+
+    setReversingAidCollection(null);
+    setAidReversalReason("");
+
+    await Promise.all([
+      loadCollections(),
+      loadExpectedAidCollectionsToday(),
+      loadOverdueAidCollections(),
+      loadAidPortfolioSummary(),
+    ]);
+  } catch (err) {
+    console.error("Unexpected Aid reversal error:", err);
+    setMessage("Unexpected error while reversing approved Aid collection.");
+  } finally {
+    setReversingAid(false);
+  }
+};
+const reverseApprovedSavingsCollection = async () => {
+  if (!reversingSavingsCollection) {
+    setMessage("No savings collection selected for reversal.");
+    return;
+  }
+
+  if (!savingsReversalReason.trim() || savingsReversalReason.trim().length < 10) {
+    setMessage("Please enter a reversal reason of at least 10 characters.");
+    return;
+  }
+
+  try {
+    setReversingSavings(true);
+    setMessage("");
+
+    const { data, error } = await supabase.rpc(
+      "admin_reverse_approved_savings_collection",
+      {
+        p_collection_id: reversingSavingsCollection.id,
+        p_reason: savingsReversalReason.trim(),
+      }
+    );
+
+    if (error) {
+      console.error("Error reversing approved savings collection:", error);
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(
+      data?.message
+        ? `${data.message} ${formatMoney(
+            Number(data.amount_reversed || 0)
+          )} reversed. New savings balance: ${formatMoney(
+            Number(data.new_total_saved || 0)
+          )}.`
+        : "Approved savings collection reversed successfully."
+    );
+
+    setReversingSavingsCollection(null);
+    setSavingsReversalReason("");
+
+    await Promise.all([
+      loadCollections(),
+      loadExpectedAidCollectionsToday(),
+      loadOverdueAidCollections(),
+      loadAidPortfolioSummary(),
+    ]);
+  } catch (err) {
+    console.error("Unexpected savings reversal error:", err);
+    setMessage("Unexpected error while reversing approved savings collection.");
+  } finally {
+    setReversingSavings(false);
+  }
+};
 
   async function loadMembers() {
     const { data, error } = await supabase
@@ -517,7 +636,31 @@ if (collection.collection_type === "loan") {
     return;
   }
 
-  setMessage("Aid collection approved and posted successfully.");
+  const postingResult = data as {
+  amount_applied?: number;
+  installments_touched?: number;
+  installments_fully_paid?: number;
+  installments_partially_paid?: number;
+} | null;
+
+const amountApplied = Number(postingResult?.amount_applied || 0);
+const installmentsTouched = Number(postingResult?.installments_touched || 0);
+const installmentsFullyPaid = Number(postingResult?.installments_fully_paid || 0);
+const installmentsPartiallyPaid = Number(
+  postingResult?.installments_partially_paid || 0
+);
+
+if (installmentsTouched > 0) {
+  setMessage(
+    `Aid collection approved. ${formatMoney(
+      amountApplied
+    )} applied across ${installmentsTouched} installment(s): ${installmentsFullyPaid} paid, ${installmentsPartiallyPaid} partial.`
+  );
+} else {
+  setMessage(
+    `Aid collection approved. ${formatMoney(amountApplied)} applied to the aid balance.`
+  );
+}
 
   await Promise.all([
     loadCollections(),
@@ -732,17 +875,28 @@ if (collection.collection_type === "loan") {
     setDateFilter(getLocalDateString());
   }
 
+const recentApprovedCollections = useMemo(() => {
+  return [...collections]
+    .filter((item) => item.status === "approved")
+    .sort((a, b) => {
+      const aTime = a.approved_at
+        ? new Date(a.approved_at).getTime()
+        : new Date(a.created_at || 0).getTime();
+
+      const bTime = b.approved_at
+        ? new Date(b.approved_at).getTime()
+        : new Date(b.created_at || 0).getTime();
+
+      return bTime - aTime;
+    })
+    .slice(0, 25);
+}, [collections]);
+
 const pendingCollectionsAwaitingApproval = useMemo(() => {
   return collections.filter((item) => item.status === "pending");
 }, [collections]);
 
-  const yesterdayApprovedCollections = useMemo(() => {
-    return collections.filter(
-      (item) =>
-        item.collection_date === yesterday && item.status === "approved"
-    );
-  }, [collections, yesterday]);
-  const allPendingCollections = useMemo(() => {
+const allPendingCollections = useMemo(() => {
   return collections.filter((item) => item.status === "pending");
 }, [collections]);
 
@@ -751,7 +905,7 @@ const allApprovedCollections = useMemo(() => {
 }, [collections]);
 
 const pendingApprovalCount = pendingCollectionsAwaitingApproval.length;
-const yesterdayApprovedCount = yesterdayApprovedCollections.length;
+const recentApprovedCount = recentApprovedCollections.length;
 const allPendingCount = allPendingCollections.length;
 const allApprovedCount = allApprovedCollections.length;
 
@@ -779,27 +933,27 @@ const allApprovedCount = allApprovedCollections.length;
     });
   }, [collections, searchTerm, statusFilter, typeFilter, dateFilter]);
 
-  const yesterdayExpected = yesterdayApprovedCollections.reduce(
+const recentlyApprovedExpected = recentApprovedCollections.reduce(
     (sum, item) => sum + Number(item.expected_amount || 0),
     0
   );
 
-  const yesterdayCollected = yesterdayApprovedCollections.reduce(
+ const recentlyApprovedCollected = recentApprovedCollections.reduce(
     (sum, item) => sum + Number(item.collected_amount || 0),
     0
   );
 
-  const yesterdayVariance = yesterdayCollected - yesterdayExpected;
+  const yesterdayVariance = recentlyApprovedCollected - recentlyApprovedExpected;
 
-  const savingsTotal = yesterdayApprovedCollections
+ const savingsTotal = recentApprovedCollections
     .filter((item) => item.collection_type === "savings")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
-  const loanTotal = yesterdayApprovedCollections
+  const loanTotal = recentApprovedCollections
     .filter((item) => item.collection_type === "loan")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
-  const shareTotal = yesterdayApprovedCollections
+  const shareTotal = recentApprovedCollections
     .filter((item) => item.collection_type === "share")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
@@ -851,11 +1005,11 @@ const allApprovedCount = allApprovedCollections.length;
 />
         <MetricCard
           title="Yesterday Approved Expected"
-          value={formatMoney(yesterdayExpected)}
+          value={formatMoney(recentlyApprovedExpected)}
         />
         <MetricCard
           title="Yesterday Approved Collected"
-          value={formatMoney(yesterdayCollected)}
+          value={formatMoney(recentlyApprovedCollected)}
         />
         <MetricCard
           title="Yesterday Approved Variance"
@@ -867,7 +1021,7 @@ const allApprovedCount = allApprovedCollections.length;
 />
 <MetricCard
   title="Yesterday Approved Collections"
-  value={yesterdayApprovedCount.toString()}
+  value={recentApprovedCount.toString()}
 />
 
 <MetricCard
@@ -1080,22 +1234,32 @@ const allApprovedCount = allApprovedCollections.length;
         <CardContent className="p-8">
        <div className="flex flex-wrap items-center gap-3">
   <h2 className="text-2xl font-black text-[#0D2D6E]">
-Yesterday&apos;s Approved Collections
+Recently Approved Collections
   </h2>
 
   <span className="rounded-full bg-green-50 px-4 py-2 text-sm font-black text-green-700">
-    {yesterdayApprovedCount}
+    {recentApprovedCount}
   </span>
 </div>
           <p className="mt-2 text-sm font-semibold text-slate-500">
-            Showing approved collections recorded for {yesterday}.
+            Showing the latest approved collections by approval time.
           </p>
 
-          <CollectionsTable
-            items={yesterdayApprovedCollections}
-            emptyText="No approved collections for yesterday."
-            processingCollectionId={processingCollectionId}
-          />
+<CollectionsTable
+  items={recentApprovedCollections}
+  emptyText="No recently approved collections found."
+  processingCollectionId={processingCollectionId}
+  showActions
+  onReverseAid={(item) => {
+    setReversingAidCollection(item);
+    setAidReversalReason("");
+  }}
+  onReverseSavings={(item) => {
+    setReversingSavingsCollection(item);
+    setSavingsReversalReason("");
+  }}
+/>
+
         </CardContent>
       </Card>
 
@@ -1202,6 +1366,154 @@ Yesterday&apos;s Approved Collections
           )}
         </CardContent>
       </Card>
+
+
+      {reversingAidCollection && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-red-700">
+              Reverse Approved Aid Collection
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-600">
+              This will reverse the approved Aid repayment, restore the affected
+              repayment schedule rows, adjust the Aid facility balance, mark the
+              collection as reversed, and write a financial audit log.
+            </p>
+
+            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+              <p>
+                <span className="font-semibold">Member:</span>{" "}
+                {reversingAidCollection.members?.full_name ||
+                  reversingAidCollection.member_name ||
+                  "Unknown"}
+              </p>
+              <p>
+                <span className="font-semibold">Amount:</span>{" "}
+                {formatMoney(Number(reversingAidCollection.collected_amount || 0))}
+              </p>
+              <p>
+                <span className="font-semibold">Collection Type:</span>{" "}
+                Aid Repayment
+              </p>
+              <p>
+                <span className="font-semibold">Reference:</span>{" "}
+                {reversingAidCollection.reference || "N/A"}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="block text-sm font-semibold text-slate-700">
+                Reversal Reason
+              </label>
+              <textarea
+                value={aidReversalReason}
+                onChange={(e) => setAidReversalReason(e.target.value)}
+                rows={4}
+                placeholder="Example: Aid collection was approved against the wrong member or wrong amount and must be reversed."
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setReversingAidCollection(null);
+                  setAidReversalReason("");
+                }}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                disabled={reversingAid}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={reverseApprovedAidCollection}
+                disabled={reversingAid}
+                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+              >
+                {reversingAid ? "Reversing..." : "Confirm Reversal"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reversingSavingsCollection && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-red-700">
+              Reverse Approved Savings Collection
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-600">
+              This will reverse the approved savings deposit, reduce the member&apos;s
+              savings balance, mark the collection as reversed, and write a financial
+              audit log.
+            </p>
+
+            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+              <p>
+                <span className="font-semibold">Member:</span>{" "}
+                {reversingSavingsCollection.members?.full_name ||
+                  reversingSavingsCollection.member_name ||
+                  "Unknown"}
+              </p>
+              <p>
+                <span className="font-semibold">Amount:</span>{" "}
+                {formatMoney(Number(reversingSavingsCollection.collected_amount || 0))}
+              </p>
+              <p>
+                <span className="font-semibold">Collection Type:</span>{" "}
+                Savings Deposit
+              </p>
+              <p>
+                <span className="font-semibold">Reference:</span>{" "}
+                {reversingSavingsCollection.reference || "N/A"}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="block text-sm font-semibold text-slate-700">
+                Reversal Reason
+              </label>
+              <textarea
+                value={savingsReversalReason}
+                onChange={(e) => setSavingsReversalReason(e.target.value)}
+                rows={4}
+                placeholder="Example: Savings collection was approved in error and must be reversed."
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setReversingSavingsCollection(null);
+                  setSavingsReversalReason("");
+                }}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                disabled={reversingSavings}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={reverseApprovedSavingsCollection}
+                disabled={reversingSavings}
+                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+              >
+                {reversingSavings ? "Reversing..." : "Confirm Reversal"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -1209,25 +1521,24 @@ Yesterday&apos;s Approved Collections
 function CollectionsTable({
   items,
   emptyText,
-  showActions = false,
+  processingCollectionId,
+  showActions,
   onApprove,
   onReject,
-  processingCollectionId,
+  onReverseAid,
+  onReverseSavings,
 }: {
-  items: Collection[];
+  items: any[];
   emptyText: string;
-  showActions?: boolean;
-  onApprove?: (collection: Collection) => void;
-  onReject?: (collection: Collection) => void;
   processingCollectionId?: string | null;
-}) {
-  if (items.length === 0) {
-    return (
-      <p className="mt-6 font-semibold text-slate-600">
-        {emptyText}
-      </p>
-    );
-  }
+  showActions?: boolean;
+  onApprove?: (item: any) => void;
+  onReject?: (item: any) => void;
+  onReverseAid?: (item: any) => void;
+  onReverseSavings?: (item: any) => void;
+})
+
+{
 
   return (
     <div className="mt-6 overflow-x-auto">
@@ -1321,31 +1632,48 @@ function CollectionsTable({
                   {formatDateTime(item.approved_at)}
                 </td>
 
-                {showActions && (
-                  <td className="py-4">
-                    {item.status === "pending" ? (
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => onApprove?.(item)}
-                          disabled={isProcessing}
-                          className="px-4 py-2"
-                        >
-                          {isProcessing ? "Working..." : "Approve"}
-                        </Button>
+{showActions && (
+  <td className="py-4">
+    {item.status === "pending" ? (
+      <div className="flex gap-2">
+        <Button
+          onClick={() => onApprove?.(item)}
+          disabled={isProcessing}
+          className="px-4 py-2"
+        >
+          {isProcessing ? "Working..." : "Approve"}
+        </Button>
 
-                        <button
-                          onClick={() => onReject?.(item)}
-                          disabled={isProcessing}
-                          className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="font-semibold text-slate-400">-</span>
-                    )}
-                  </td>
-                )}
+        <button
+          onClick={() => onReject?.(item)}
+          disabled={isProcessing}
+          className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Reject
+        </button>
+      </div>
+    ) : item.collection_type === "loan" && item.status === "approved" ? (
+      <button
+        type="button"
+        onClick={() => onReverseAid?.(item)}
+        className="rounded-md border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+      >
+        Reverse Aid
+      </button>
+    ) : item.collection_type === "savings" && item.status === "approved" ? (
+      <button
+        type="button"
+        onClick={() => onReverseSavings?.(item)}
+        className="rounded-md border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+      >
+        Reverse Savings
+      </button>
+    ) : (
+      <span className="font-semibold text-slate-400">-</span>
+    )}
+  </td>
+)}
+
               </tr>
             );
           })}
