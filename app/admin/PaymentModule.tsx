@@ -94,6 +94,15 @@ const [editPaymentReference, setEditPaymentReference] = useState("");
 const [editPaymentStatus, setEditPaymentStatus] = useState("");
 const [editPaymentReason, setEditPaymentReason] = useState("");
 
+const [reversingPayment, setReversingPayment] = useState<any | null>(null);
+const [reversalReason, setReversalReason] = useState("");
+const [reversingSharePayment, setReversingSharePayment] = useState(false);
+
+const [correctingPayment, setCorrectingPayment] = useState<any | null>(null);
+const [newMemberId, setNewMemberId] = useState("");
+const [correctionReason, setCorrectionReason] = useState("");
+const [correctingMember, setCorrectingMember] = useState(false);
+
   const [message, setMessage] = useState("");
 
   const [creatingPayment, setCreatingPayment] = useState(false);
@@ -142,6 +151,63 @@ members (
     setLoadingPayments(false);
   }
 
+
+const correctPaymentMember = async () => {
+  if (!correctingPayment) {
+    setMessage("No payment selected for correction.");
+    return;
+  }
+
+  if (!newMemberId) {
+    setMessage("Please select the correct member.");
+    return;
+  }
+
+  if (!correctionReason.trim() || correctionReason.trim().length < 10) {
+    setMessage("Please enter a correction reason of at least 10 characters.");
+    return;
+  }
+
+  try {
+    setCorrectingMember(true);
+    setMessage("");
+
+    const { data, error } = await supabase.rpc("admin_correct_payment_member", {
+      p_payment_id: correctingPayment.id,
+      p_new_member_id: newMemberId,
+      p_reason: correctionReason.trim(),
+    });
+
+    if (error) {
+      console.error("Error correcting payment member:", error);
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(
+      data?.message ||
+        `Payment corrected successfully and moved to the selected member.`
+    );
+
+    setCorrectingPayment(null);
+    setNewMemberId("");
+    setCorrectionReason("");
+
+    await loadPayments();
+  } catch (err) {
+    console.error("Unexpected correction error:", err);
+    setMessage("Unexpected error while correcting payment member.");
+  } finally {
+    setCorrectingMember(false);
+  }
+};
+
+const formatMoney = (amount: number) =>
+  new Intl.NumberFormat("fr-CM", {
+    style: "currency",
+    currency: "XAF",
+    maximumFractionDigits: 0,
+  }).format(amount);
   async function loadMembers() {
     const { data, error } = await supabase
       .from("members")
@@ -161,6 +227,53 @@ members (
     loadPayments();
     loadMembers();
   }, []);
+
+
+  const reversePostedSharePayment = async () => {
+  if (!reversingPayment) {
+    setMessage("No payment selected for reversal.");
+    return;
+  }
+
+  if (!reversalReason.trim() || reversalReason.trim().length < 10) {
+    setMessage("Please enter a reversal reason of at least 10 characters.");
+    return;
+  }
+
+  try {
+    setReversingSharePayment(true);
+    setMessage("");
+
+    const { data, error } = await supabase.rpc(
+      "admin_reverse_posted_share_payment",
+      {
+        p_payment_id: reversingPayment.id,
+        p_reason: reversalReason.trim(),
+      }
+    );
+
+    if (error) {
+      console.error("Error reversing posted share payment:", error);
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(
+      data?.message ||
+        `Posted share payment reversed successfully.`
+    );
+
+    setReversingPayment(null);
+    setReversalReason("");
+
+    await loadPayments();
+  } catch (err) {
+    console.error("Unexpected share reversal error:", err);
+    setMessage("Unexpected error while reversing posted share payment.");
+  } finally {
+    setReversingSharePayment(false);
+  }
+};
 
   async function createPayment() {
     if (!newPaymentMemberId || !newPaymentAmount) {
@@ -750,30 +863,57 @@ return (
       </span>
     )}
 
-{isSuperAdmin && canEditOrDeletePayment(payment) && (
-  <>
-    <button
-      onClick={() => openEditPayment(payment)}
-      className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600"
-    >
-      Edit
-    </button>
+    {isSuperAdmin && canEditOrDeletePayment(payment) && (
+      <>
+        <button
+          onClick={() => openEditPayment(payment)}
+          className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600"
+        >
+          Edit
+        </button>
 
-    <button
-      onClick={() => deletePaymentAsSuperAdmin(payment)}
-      disabled={deletingPaymentId === payment.id}
-      className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
-    >
-      {deletingPaymentId === payment.id ? "Deleting..." : "Delete"}
-    </button>
-  </>
-)}
+        <button
+          onClick={() => deletePaymentAsSuperAdmin(payment)}
+          disabled={deletingPaymentId === payment.id}
+          className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+        >
+          {deletingPaymentId === payment.id ? "Deleting..." : "Delete"}
+        </button>
 
-{isSuperAdmin && !canEditOrDeletePayment(payment) && (
-  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-    Locked
-  </span>
-)}
+        <button
+          type="button"
+          onClick={() => {
+            setCorrectingPayment(payment);
+            setNewMemberId(payment.member_id || "");
+            setCorrectionReason("");
+          }}
+          className="rounded-md border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+        >
+          Correct Member
+        </button>
+      </>
+    )}
+
+    {isSuperAdmin &&
+      payment.payment_type === "share_purchase" &&
+      payment.payment_status === "approved" && (
+        <button
+          type="button"
+          onClick={() => {
+            setReversingPayment(payment);
+            setReversalReason("");
+          }}
+          className="rounded-md border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+        >
+          Reverse
+        </button>
+      )}
+
+    {isSuperAdmin && !canEditOrDeletePayment(payment) && (
+      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+        Locked
+      </span>
+    )}
   </div>
 </td>
                   </tr>
@@ -784,6 +924,171 @@ return (
         )}
       </CardContent>
        </Card>
+
+{correctingPayment && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+      <h3 className="text-lg font-bold text-slate-900">
+        Correct Payment Member
+      </h3>
+
+      <p className="mt-2 text-sm text-slate-600">
+        Move this payment from the wrong member to the correct member. This will
+        be recorded in the financial audit logs.
+      </p>
+
+      <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+        <p>
+          <span className="font-semibold">Current Member:</span>{" "}
+          {correctingPayment.members?.full_name ||
+            correctingPayment.member_name ||
+            "Unknown"}
+        </p>
+        <p>
+          <span className="font-semibold">Amount:</span>{" "}
+          {formatMoney(Number(correctingPayment.amount || 0))}
+        </p>
+        <p>
+          <span className="font-semibold">Type:</span>{" "}
+          {correctingPayment.payment_type}
+        </p>
+        <p>
+          <span className="font-semibold">Reference:</span>{" "}
+          {correctingPayment.reference || "N/A"}
+        </p>
+      </div>
+
+      <div className="mt-4">
+        <label className="block text-sm font-semibold text-slate-700">
+          Correct Member
+        </label>
+        <select
+          value={newMemberId}
+          onChange={(e) => setNewMemberId(e.target.value)}
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">Select correct member</option>
+          {members.map((member: any) => (
+            <option key={member.id} value={member.id}>
+              {member.full_name} — {member.member_number}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mt-4">
+        <label className="block text-sm font-semibold text-slate-700">
+          Correction Reason
+        </label>
+        <textarea
+          value={correctionReason}
+          onChange={(e) => setCorrectionReason(e.target.value)}
+          rows={4}
+          placeholder="Example: Payment was wrongly assigned to CAP-M-0009. Correct member is CAP-M-0008."
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setCorrectingPayment(null);
+            setNewMemberId("");
+            setCorrectionReason("");
+          }}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          disabled={correctingMember}
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={correctPaymentMember}
+          disabled={correctingMember}
+          className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+        >
+          {correctingMember ? "Correcting..." : "Confirm Correction"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{reversingPayment && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+      <h3 className="text-lg font-bold text-red-700">
+        Reverse Posted Share Payment
+      </h3>
+
+      <p className="mt-2 text-sm text-slate-600">
+        This will reverse the posted share payment, mark the share transaction
+        as reversed, reduce the member&apos;s share balance, and write a
+        financial audit log. This action should only be used for confirmed
+        mistakes.
+      </p>
+
+      <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+        <p>
+          <span className="font-semibold">Member:</span>{" "}
+          {reversingPayment.members?.full_name ||
+            reversingPayment.member_name ||
+            "Unknown"}
+        </p>
+        <p>
+          <span className="font-semibold">Amount:</span>{" "}
+          {formatMoney(Number(reversingPayment.amount || 0))}
+        </p>
+        <p>
+          <span className="font-semibold">Type:</span>{" "}
+          {reversingPayment.payment_type}
+        </p>
+        <p>
+          <span className="font-semibold">Reference:</span>{" "}
+          {reversingPayment.reference || "N/A"}
+        </p>
+      </div>
+
+      <div className="mt-4">
+        <label className="block text-sm font-semibold text-slate-700">
+          Reversal Reason
+        </label>
+        <textarea
+          value={reversalReason}
+          onChange={(e) => setReversalReason(e.target.value)}
+          rows={4}
+          placeholder="Example: Payment was wrongly approved and must be reversed from the share ledger."
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setReversingPayment(null);
+            setReversalReason("");
+          }}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          disabled={reversingSharePayment}
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={reversePostedSharePayment}
+          disabled={reversingSharePayment}
+          className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+        >
+          {reversingSharePayment ? "Reversing..." : "Confirm Reversal"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
     {editingPayment && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
