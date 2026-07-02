@@ -94,6 +94,7 @@ type ExpectedAidCollection = {
   aid_number: string | null;
   outstanding_balance: number | null;
   daily_repayment_amount: number | null;
+  repayment_start_date?: string | null;
 };
 
 type AidPortfolioSummary = {
@@ -104,6 +105,12 @@ type AidPortfolioSummary = {
   total_expected_repayment: number;
   total_amount_repaid: number;
   active_outstanding_balance: number;
+};
+
+type ActiveLoanRecord = {
+  id: string;
+  status: string;
+  outstanding_balance: number | null;
 };
 
 function getLocalDateString(date = new Date()) {
@@ -163,6 +170,18 @@ function formatDateTime(value: string | null | undefined) {
   return new Date(value).toLocaleString();
 }
 
+function getApprovedDateString(item: Collection) {
+  if (item.approved_at) {
+    return getLocalDateString(new Date(item.approved_at));
+  }
+
+  if (item.created_at) {
+    return getLocalDateString(new Date(item.created_at));
+  }
+
+  return item.collection_date || "";
+}
+
 export default function CollectionsModule() {
   const today = getLocalDateString();
   const yesterday = getLocalDateString(addDays(new Date(), -1));
@@ -182,7 +201,7 @@ export default function CollectionsModule() {
   const [memberId, setMemberId] = useState("");
   const [agentId, setAgentId] = useState("");
   const [teamId, setTeamId] = useState("");
-  const [collectionType, setCollectionType] = useState("loan");
+  const [collectionType, setCollectionType] = useState("savings");
   const [expectedAmount, setExpectedAmount] = useState("");
   const [collectedAmount, setCollectedAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -441,7 +460,7 @@ const reverseApprovedSavingsCollection = async () => {
     setMemberId("");
     setAgentId("");
     setTeamId("");
-    setCollectionType("loan");
+    setCollectionType("savings");
     setExpectedAmount("");
     setCollectedAmount("");
     setPaymentMethod("cash");
@@ -495,6 +514,24 @@ async function loadAidPortfolioSummary() {
   setAidPortfolioSummary(data as AidPortfolioSummary | null);
 }
 
+async function getMemberActiveAid(memberId: string) {
+  // Aid facilities are stored in the loans table in the current CAPDCOOP schema.
+  const { data, error } = await supabase
+    .from("loans")
+    .select("id, status, outstanding_balance")
+    .eq("member_id", memberId)
+    .in("status", ["active", "overdue", "approved"])
+    .gt("outstanding_balance", 0)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as ActiveLoanRecord | null;
+}
+
 
   async function recordCollection() {
     setMessage("");
@@ -523,6 +560,24 @@ async function loadAidPortfolioSummary() {
     }
 
     setIsSubmitting(true);
+
+    if (collectionType === "loan") {
+      try {
+        const activeAid = await getMemberActiveAid(memberId);
+
+        if (!activeAid) {
+          setMessage(
+            "Rejected: this member has no active Aid facility. Record this as Savings if the member is only saving."
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (activeAidError: any) {
+        setMessage(activeAidError?.message || "Could not verify member Aid status.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     const { error } = await supabase.from(COLLECTIONS_TABLE).insert({
       member_id: memberId,
@@ -619,6 +674,28 @@ await Promise.all([
     }
 
 if (collection.collection_type === "loan") {
+  if (!collection.member_id) {
+    setProcessingCollectionId(null);
+    setMessage("This Aid collection is not linked to a member.");
+    return;
+  }
+
+  try {
+    const activeAid = await getMemberActiveAid(collection.member_id);
+
+    if (!activeAid) {
+      setProcessingCollectionId(null);
+      setMessage(
+        "Rejected: this member has no active Aid facility. This collection cannot be approved as Aid repayment."
+      );
+      return;
+    }
+  } catch (activeAidError: any) {
+    setProcessingCollectionId(null);
+    setMessage(activeAidError?.message || "Could not verify member Aid status.");
+    return;
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -875,9 +952,11 @@ if (installmentsTouched > 0) {
     setDateFilter(getLocalDateString());
   }
 
-const recentApprovedCollections = useMemo(() => {
+const approvedCollectionsToday = useMemo(() => {
   return [...collections]
-    .filter((item) => item.status === "approved")
+    .filter((item) => {
+      return item.status === "approved" && getApprovedDateString(item) === today;
+    })
     .sort((a, b) => {
       const aTime = a.approved_at
         ? new Date(a.approved_at).getTime()
@@ -888,9 +967,8 @@ const recentApprovedCollections = useMemo(() => {
         : new Date(b.created_at || 0).getTime();
 
       return bTime - aTime;
-    })
-    .slice(0, 25);
-}, [collections]);
+    });
+}, [collections, today]);
 
 const pendingCollectionsAwaitingApproval = useMemo(() => {
   return collections.filter((item) => item.status === "pending");
@@ -905,9 +983,42 @@ const allApprovedCollections = useMemo(() => {
 }, [collections]);
 
 const pendingApprovalCount = pendingCollectionsAwaitingApproval.length;
-const recentApprovedCount = recentApprovedCollections.length;
+const todayApprovedCount = approvedCollectionsToday.length;
 const allPendingCount = allPendingCollections.length;
 const allApprovedCount = allApprovedCollections.length;
+
+const firstApprovedAidCollectionDateByMember = useMemo(() => {
+  const firstDateByMember = new Map<string, string>();
+
+  collections
+    .filter((item) => item.status === "approved" && item.collection_type === "loan")
+    .forEach((item) => {
+      if (!item.member_id) return;
+
+      const approvedDate = getApprovedDateString(item);
+      if (!approvedDate) return;
+
+      const existingDate = firstDateByMember.get(item.member_id);
+
+      if (!existingDate || approvedDate < existingDate) {
+        firstDateByMember.set(item.member_id, approvedDate);
+      }
+    });
+
+  return firstDateByMember;
+}, [collections]);
+
+const payableOverdueAidCollections = useMemo(() => {
+  return overdueAidCollections.filter((item) => {
+    const repaymentStartDate =
+      item.repayment_start_date ||
+      (item.member_id ? firstApprovedAidCollectionDateByMember.get(item.member_id) : null);
+
+    if (!repaymentStartDate) return true;
+
+    return item.due_date >= repaymentStartDate;
+  });
+}, [overdueAidCollections, firstApprovedAidCollectionDateByMember]);
 
   const filteredCollections = useMemo(() => {
     return collections.filter((item) => {
@@ -933,27 +1044,27 @@ const allApprovedCount = allApprovedCollections.length;
     });
   }, [collections, searchTerm, statusFilter, typeFilter, dateFilter]);
 
-const recentlyApprovedExpected = recentApprovedCollections.reduce(
+const todayApprovedExpected = approvedCollectionsToday.reduce(
     (sum, item) => sum + Number(item.expected_amount || 0),
     0
   );
 
- const recentlyApprovedCollected = recentApprovedCollections.reduce(
+ const todayApprovedCollected = approvedCollectionsToday.reduce(
     (sum, item) => sum + Number(item.collected_amount || 0),
     0
   );
 
-  const yesterdayVariance = recentlyApprovedCollected - recentlyApprovedExpected;
+  const todayApprovedVariance = todayApprovedCollected - todayApprovedExpected;
 
- const savingsTotal = recentApprovedCollections
+ const savingsTotal = approvedCollectionsToday
     .filter((item) => item.collection_type === "savings")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
-  const loanTotal = recentApprovedCollections
+  const loanTotal = approvedCollectionsToday
     .filter((item) => item.collection_type === "loan")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
-  const shareTotal = recentApprovedCollections
+  const shareTotal = approvedCollectionsToday
     .filter((item) => item.collection_type === "share")
     .reduce((sum, item) => sum + Number(item.collected_amount || 0), 0);
 
@@ -965,9 +1076,9 @@ const recentlyApprovedExpected = recentApprovedCollections.reduce(
     0
   );
 
-  const overdueAidCount = overdueAidCollections.length;
+  const overdueAidCount = payableOverdueAidCollections.length;
 
-  const overdueAidAmount = overdueAidCollections.reduce(
+  const overdueAidAmount = payableOverdueAidCollections.reduce(
     (sum, item) => sum + Number(item.amount_due || 0),
     0
   );
@@ -1004,24 +1115,24 @@ const recentlyApprovedExpected = recentApprovedCollections.reduce(
   value={formatMoney(aidPortfolioSummary?.active_outstanding_balance || 0)}
 />
         <MetricCard
-          title="Yesterday Approved Expected"
-          value={formatMoney(recentlyApprovedExpected)}
+          title="Today Approved Expected"
+          value={formatMoney(todayApprovedExpected)}
         />
         <MetricCard
-          title="Yesterday Approved Collected"
-          value={formatMoney(recentlyApprovedCollected)}
+          title="Today Approved Collected"
+          value={formatMoney(todayApprovedCollected)}
         />
         <MetricCard
-          title="Yesterday Approved Variance"
-          value={formatMoney(yesterdayVariance)}
+          title="Today Approved Variance"
+          value={formatMoney(todayApprovedVariance)}
         />
 <MetricCard
   title="Pending Collections Awaiting Approval"
   value={pendingApprovalCount.toString()}
 />
 <MetricCard
-  title="Yesterday Approved Collections"
-  value={recentApprovedCount.toString()}
+  title="Today Approved Collections"
+  value={todayApprovedCount.toString()}
 />
 
 <MetricCard
@@ -1092,8 +1203,8 @@ const recentlyApprovedExpected = recentApprovedCollections.reduce(
               onChange={(e) => setCollectionType(e.target.value)}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
             >
-              <option value="loan">Aid Repayment</option>
               <option value="savings">Savings</option>
+              <option value="loan">Aid Repayment</option>
               <option value="share">Share Subscription</option>
             </select>
 
@@ -1196,7 +1307,7 @@ const recentlyApprovedExpected = recentApprovedCollections.reduce(
     </p>
 
     <ExpectedAidCollectionsTable
-      items={overdueAidCollections}
+      items={payableOverdueAidCollections}
       emptyText="No overdue aid collections."
     />
   </CardContent>
@@ -1234,20 +1345,20 @@ const recentlyApprovedExpected = recentApprovedCollections.reduce(
         <CardContent className="p-8">
        <div className="flex flex-wrap items-center gap-3">
   <h2 className="text-2xl font-black text-[#0D2D6E]">
-Recently Approved Collections
+Approved Collections Today
   </h2>
 
   <span className="rounded-full bg-green-50 px-4 py-2 text-sm font-black text-green-700">
-    {recentApprovedCount}
+    {todayApprovedCount}
   </span>
 </div>
           <p className="mt-2 text-sm font-semibold text-slate-500">
-            Showing the latest approved collections by approval time.
+            Showing only collections approved today by approval time.
           </p>
 
 <CollectionsTable
-  items={recentApprovedCollections}
-  emptyText="No recently approved collections found."
+  items={approvedCollectionsToday}
+  emptyText="No collections have been approved today."
   processingCollectionId={processingCollectionId}
   showActions
   onReverseAid={(item) => {

@@ -28,6 +28,7 @@ type Loan = {
   purpose: string | null;
   status: string;
   start_date: string | null;
+  repayment_start_date: string | null;
   created_at: string | null;
   approved_at: string | null;
   disbursed_at: string | null;
@@ -84,7 +85,11 @@ type RepaymentScheduleRow = {
 
 const INSURANCE_RATE = 0.025;
 const REGISTRATION_FEE = 5000;
-const INTEREST_RATE_PER_30_DAYS = 0.03;
+const INTEREST_RATE_PER_COLLECTION_MONTH = 0.03;
+const COLLECTION_DAYS_PER_MONTH = 24;
+
+// CAPDCOOP collects Aid repayments from Monday to Friday only.
+// One Aid month is therefore treated as 24 collection days, not 30 calendar days.
 
 const emptyNewLoan: NewLoanState = {
   member_id: "",
@@ -103,6 +108,148 @@ const emptyEditLoan: EditLoanState = {
   status: "pending",
   reason: "",
 };
+
+type RepaymentScheduleInsertRow = Omit<RepaymentScheduleRow, "id">;
+
+function formatDateOnly(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateOnly(value?: string | null) {
+  if (!value) return new Date();
+
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+
+  if (!year || !month || !day) return new Date(value);
+
+  return new Date(year, month - 1, day);
+}
+
+function getTodayDateString() {
+  return formatDateOnly(new Date());
+}
+
+function isCollectionDate(date: Date) {
+  const day = date.getDay();
+
+  return day >= 1 && day <= 5;
+}
+
+function getNextCollectionDate(date: Date) {
+  const next = new Date(date);
+
+  while (!isCollectionDate(next)) {
+    next.setDate(next.getDate() + 1);
+  }
+
+  return next;
+}
+
+function getScheduleStatus(
+  dueDate: string,
+  expectedAmount: number,
+  paidAmount: number,
+) {
+  const today = getTodayDateString();
+  const amountDue = Math.max(expectedAmount - paidAmount, 0);
+
+  if (amountDue <= 0.0001) return "paid";
+  if (paidAmount > 0) return "partial";
+  if (dueDate < today) return "overdue";
+
+  return "pending";
+}
+
+function getPaymentPriority(dueDate: string, today: string) {
+  if (dueDate === today) return 0;
+  if (dueDate < today) return 1;
+
+  return 2;
+}
+
+function generateCollectionScheduleRows({
+  loanId,
+  memberId,
+  startDate,
+  durationDays,
+  dailyAmount,
+}: {
+  loanId: string;
+  memberId: string;
+  startDate: string;
+  durationDays: number;
+  dailyAmount: number;
+}) {
+  const rows: RepaymentScheduleInsertRow[] = [];
+  let dueDate = getNextCollectionDate(parseDateOnly(startDate));
+
+  for (let index = 0; index < durationDays; index += 1) {
+    const dueDateString = formatDateOnly(dueDate);
+
+    rows.push({
+      loan_id: loanId,
+      member_id: memberId,
+      installment_number: index + 1,
+      due_date: dueDateString,
+      expected_amount: dailyAmount,
+      paid_amount: 0,
+      arrears_amount: dailyAmount,
+      status: getScheduleStatus(dueDateString, dailyAmount, 0),
+    });
+
+    do {
+      dueDate.setDate(dueDate.getDate() + 1);
+    } while (!isCollectionDate(dueDate));
+  }
+
+  return rows;
+}
+
+function applyAmountToScheduleRows(
+  rows: RepaymentScheduleInsertRow[],
+  amountToApply: number,
+) {
+  const today = getTodayDateString();
+  let remainingAmount = Math.max(Number(amountToApply || 0), 0);
+
+  const clonedRows = rows.map((row) => ({ ...row }));
+
+  const orderedRows = [...clonedRows].sort((a, b) => {
+    const priorityDifference =
+      getPaymentPriority(a.due_date, today) -
+      getPaymentPriority(b.due_date, today);
+
+    if (priorityDifference !== 0) return priorityDifference;
+    if (a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
+
+    return a.installment_number - b.installment_number;
+  });
+
+  for (const row of orderedRows) {
+    if (remainingAmount <= 0) break;
+
+    const expectedAmount = Number(row.expected_amount || 0);
+    const currentPaidAmount = Number(row.paid_amount || 0);
+    const amountDue = Math.max(expectedAmount - currentPaidAmount, 0);
+
+    if (amountDue <= 0) continue;
+
+    const appliedAmount = Math.min(remainingAmount, amountDue);
+    const newPaidAmount = currentPaidAmount + appliedAmount;
+
+    row.paid_amount = newPaidAmount;
+    row.arrears_amount = Math.max(expectedAmount - newPaidAmount, 0);
+    row.status = getScheduleStatus(row.due_date, expectedAmount, newPaidAmount);
+
+    remainingAmount -= appliedAmount;
+  }
+
+  return clonedRows;
+}
 
 export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
   const [members, setMembers] = useState<MemberOption[]>([]);
@@ -130,7 +277,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
   const isSuperAdmin = adminRole === "super_admin";
 
   const canManageLoans = ["super_admin", "admin", "finance"].includes(
-    adminRole
+    adminRole,
   );
 
   function calculateLoan(principalInput: number, durationInput: number) {
@@ -139,9 +286,10 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     const insuranceFee = principal * INSURANCE_RATE;
     const registrationFee = REGISTRATION_FEE;
-    const interestPeriods = Math.floor(durationDays / 30);
-    const interestPerPeriod = principal * INTEREST_RATE_PER_30_DAYS;
-    const totalInterest = interestPeriods * interestPerPeriod;
+    const interestMonths =
+      durationDays > 0 ? durationDays / COLLECTION_DAYS_PER_MONTH : 0;
+    const totalInterest =
+      principal * INTEREST_RATE_PER_COLLECTION_MONTH * interestMonths;
 
     const totalExpectedRepayment =
       principal + insuranceFee + registrationFee + totalInterest;
@@ -152,7 +300,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     return {
       insuranceFee,
       registrationFee,
-      interestPeriods,
+      interestMonths,
       totalInterest,
       totalExpectedRepayment,
       dailyPaymentAmount,
@@ -162,14 +310,14 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
   const preview = useMemo(() => {
     return calculateLoan(
       Number(newLoan.loan_amount || 0),
-      Number(newLoan.duration_days || 0)
+      Number(newLoan.duration_days || 0),
     );
   }, [newLoan.loan_amount, newLoan.duration_days]);
 
   const editPreview = useMemo(() => {
     return calculateLoan(
       Number(editLoan.loan_amount || 0),
-      Number(editLoan.duration_days || 0)
+      Number(editLoan.duration_days || 0),
     );
   }, [editLoan.loan_amount, editLoan.duration_days]);
 
@@ -205,7 +353,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
           full_name,
           member_number
         )
-      `
+      `,
       )
       .or("is_deleted.is.null,is_deleted.eq.false")
       .order("created_at", { ascending: false });
@@ -244,7 +392,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     }
 
     if (!newLoan.member_id || !newLoan.loan_amount || !newLoan.duration_days) {
-     setMessage("Please select a member, enter aid amount, and duration.");
+      setMessage("Please select a member, enter aid amount, and duration.");
       return;
     }
 
@@ -278,7 +426,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     const nextLoanNumber = `CAPD-LOAN-${String((count || 0) + 1).padStart(
       5,
-      "0"
+      "0",
     )}`;
 
     const { error } = await supabase.from("loans").insert({
@@ -329,7 +477,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     setSelectedLoanSchedule((data as RepaymentScheduleRow[]) || []);
 
     if (!data || data.length === 0) {
-    setMessage("No repayment schedule found for this aid record yet.");
+      setMessage("No repayment schedule found for this aid record yet.");
     }
   }
 
@@ -365,20 +513,28 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     if (!canManageLoans) return;
 
     const confirmed = window.confirm(
-      "Confirm that this aid record has been disbursed and should become active?"
+      "Confirm that this aid record has been disbursed and should become active?",
     );
 
     if (!confirmed) return;
 
     setActionLoanId(loan.id);
 
-    const startDate = new Date().toISOString().split("T")[0];
+    const startDate = getTodayDateString();
+    const repaymentStartDate = formatDateOnly(
+      getNextCollectionDate(
+        parseDateOnly(
+          loan.repayment_start_date || loan.start_date || startDate,
+        ),
+      ),
+    );
 
     const { error } = await supabase
       .from("loans")
       .update({
         status: "active",
         start_date: loan.start_date || startDate,
+        repayment_start_date: loan.repayment_start_date || repaymentStartDate,
         disbursed_at: new Date().toISOString(),
         disbursed_by: currentAdmin?.id || null,
         outstanding_balance:
@@ -413,22 +569,12 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       }
 
       if (!existingSchedule || existingSchedule.length === 0) {
-        const start = loan.start_date ? new Date(loan.start_date) : new Date();
-
-        const scheduleRows = Array.from({ length: durationDays }, (_, index) => {
-          const dueDate = new Date(start);
-          dueDate.setDate(start.getDate() + index);
-
-          return {
-            loan_id: loan.id,
-            member_id: memberId,
-            installment_number: index + 1,
-            due_date: dueDate.toISOString().slice(0, 10),
-            expected_amount: dailyAmount,
-            paid_amount: 0,
-            arrears_amount: dailyAmount,
-            status: "pending",
-          };
+        const scheduleRows = generateCollectionScheduleRows({
+          loanId: loan.id,
+          memberId,
+          startDate: repaymentStartDate,
+          durationDays,
+          dailyAmount,
         });
 
         const { error: scheduleError } = await supabase
@@ -444,14 +590,16 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     }
 
     setActionLoanId(null);
-    setMessage("Aid disbursed, activated, and repayment schedule generated.");
+    setMessage(
+      "Aid disbursed, activated, and Monday-Friday repayment schedule generated.",
+    );
     await loadLoans();
   }
 
   async function rejectLoan(loan: Loan) {
     if (!canManageLoans) return;
 
-   const reason = window.prompt("Reason for rejecting this aid record?");
+    const reason = window.prompt("Reason for rejecting this aid record?");
     if (reason === null) return;
 
     setActionLoanId(loan.id);
@@ -472,37 +620,266 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-  setMessage("Aid record rejected.");
+    setMessage("Aid record rejected.");
     await loadLoans();
   }
 
-  async function closeLoan(loan: Loan) {
-    if (!canManageLoans) return;
+  async function rebuildLoanScheduleFromAmountRepaid(
+    loan: Loan,
+    computed: ReturnType<typeof calculateLoan>,
+  ) {
+    const memberId = loan.member_id;
 
-    const confirmed = window.confirm("Close this aid record manually?");
+    if (!memberId) return;
+
+    const durationDays = Number(loan.duration_days || 0);
+    const amountRepaid = Number(loan.amount_repaid || 0);
+    const repaymentStartDate = formatDateOnly(
+      getNextCollectionDate(
+        parseDateOnly(
+          loan.repayment_start_date ||
+            loan.start_date ||
+            loan.disbursed_at?.slice(0, 10) ||
+            getTodayDateString(),
+        ),
+      ),
+    );
+
+    if (durationDays <= 0 || Number(computed.dailyPaymentAmount || 0) <= 0) {
+      return;
+    }
+
+    const emptyScheduleRows = generateCollectionScheduleRows({
+      loanId: loan.id,
+      memberId,
+      startDate: repaymentStartDate,
+      durationDays,
+      dailyAmount: computed.dailyPaymentAmount,
+    });
+
+    const allocatedScheduleRows = applyAmountToScheduleRows(
+      emptyScheduleRows,
+      amountRepaid,
+    );
+
+    const { error: deleteScheduleError } = await supabase
+      .from("loan_repayment_schedule")
+      .delete()
+      .eq("loan_id", loan.id);
+
+    if (deleteScheduleError) {
+      throw deleteScheduleError;
+    }
+
+    const { error: insertScheduleError } = await supabase
+      .from("loan_repayment_schedule")
+      .insert(allocatedScheduleRows);
+
+    if (insertScheduleError) {
+      throw insertScheduleError;
+    }
+
+    await supabase
+      .from("loans")
+      .update({ repayment_start_date: repaymentStartDate })
+      .eq("id", loan.id);
+  }
+
+  async function recalculateAidLoan(loan: Loan) {
+    if (!isSuperAdmin) {
+      setMessage("Only a Super Admin can recalculate aid records.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Recalculate this aid record using 24 collection days per Aid month? Active schedules will be rebuilt for Monday-Friday collection days and existing amount repaid will be re-applied to the current day first, then arrears.",
+    );
+
     if (!confirmed) return;
 
     setActionLoanId(loan.id);
+    setMessage("");
+
+    const principal = Number(loan.loan_amount || 0);
+    const durationDays = Number(loan.duration_days || 0);
+    const amountRepaid = Number(loan.amount_repaid || 0);
+    const computed = calculateLoan(principal, durationDays);
+    const recalculatedOutstanding = Math.max(
+      computed.totalExpectedRepayment - amountRepaid,
+      0,
+    );
+    const nextStatus =
+      loan.status === "active" && recalculatedOutstanding <= 0.01
+        ? "closed"
+        : loan.status;
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("loans")
+      .update({
+        insurance_fee: computed.insuranceFee,
+        registration_fee: computed.registrationFee,
+        total_interest: computed.totalInterest,
+        daily_payment_amount: computed.dailyPaymentAmount,
+        total_expected_repayment: computed.totalExpectedRepayment,
+        outstanding_balance:
+          nextStatus === "closed" ? 0 : recalculatedOutstanding,
+        status: nextStatus,
+        updated_at: now,
+        updated_by: currentAdmin?.id || null,
+        edit_reason:
+          "Recalculated using 24 collection days per Aid month and Monday-Friday collection schedule.",
+      })
+      .eq("id", loan.id);
+
+    if (error) {
+      setActionLoanId(null);
+      setMessage(error.message || "Failed to recalculate aid record.");
+      return;
+    }
+
+    try {
+      if (["active", "closed"].includes(loan.status)) {
+        await rebuildLoanScheduleFromAmountRepaid(loan, computed);
+      }
+
+      await supabase.from("loan_audit_logs").insert({
+        loan_id: loan.id,
+        action: "recalculated",
+        old_data: loan,
+        new_data: {
+          insurance_fee: computed.insuranceFee,
+          registration_fee: computed.registrationFee,
+          total_interest: computed.totalInterest,
+          daily_payment_amount: computed.dailyPaymentAmount,
+          total_expected_repayment: computed.totalExpectedRepayment,
+          outstanding_balance:
+            nextStatus === "closed" ? 0 : recalculatedOutstanding,
+          status: nextStatus,
+        },
+        reason:
+          "Recalculated using 24 collection days per Aid month and Monday-Friday collection schedule.",
+        performed_by: currentAdmin?.id || null,
+      });
+    } catch (scheduleError: any) {
+      setActionLoanId(null);
+      setMessage(
+        scheduleError?.message ||
+          "Aid totals were updated, but the repayment schedule could not be rebuilt.",
+      );
+      await loadLoans();
+      return;
+    }
+
+    setActionLoanId(null);
+    await loadLoans();
+
+    if (selectedLoanId === loan.id) {
+      await loadLoanSchedule(loan.id);
+    }
+
+    setMessage("Aid record recalculated successfully.");
+  }
+
+  async function processAidClearance(loan: Loan) {
+    if (!canManageLoans) return;
+
+    const outstandingBalance = Number(loan.outstanding_balance || 0);
+
+    if (outstandingBalance > 1) {
+      setMessage(
+        `This Aid still has an outstanding balance of FCFA ${outstandingBalance.toLocaleString()}. Approve the lump-sum Aid collection first, then process clearance.`,
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Process early Aid clearance? This will close the Aid record and mark remaining schedule rows as paid.",
+    );
+
+    if (!confirmed) return;
+
+    setActionLoanId(loan.id);
+
+    const now = new Date().toISOString();
+    const totalExpectedRepayment = Number(loan.total_expected_repayment || 0);
+    const amountRepaid = Math.max(
+      Number(loan.amount_repaid || 0),
+      totalExpectedRepayment,
+    );
 
     const { error } = await supabase
       .from("loans")
       .update({
         status: "closed",
+        amount_repaid: amountRepaid,
         outstanding_balance: 0,
-        updated_at: new Date().toISOString(),
+        last_payment_date: getTodayDateString(),
+        updated_at: now,
         updated_by: currentAdmin?.id || null,
+        edit_reason: "Early Aid clearance processed after full repayment.",
       })
       .eq("id", loan.id);
 
-    setActionLoanId(null);
-
     if (error) {
-      setMessage(error.message);
+      setMessage(error.message || "Failed to process Aid clearance.");
+      setActionLoanId(null);
       return;
     }
 
-    setMessage("Aid record closed.");
+    const { data: scheduleRows, error: scheduleLoadError } = await supabase
+      .from("loan_repayment_schedule")
+      .select("id, expected_amount")
+      .eq("loan_id", loan.id);
+
+    if (scheduleLoadError) {
+      setMessage(scheduleLoadError.message);
+      setActionLoanId(null);
+      return;
+    }
+
+    const scheduleUpdates = (scheduleRows || []).map((row: any) =>
+      supabase
+        .from("loan_repayment_schedule")
+        .update({
+          paid_amount: Number(row.expected_amount || 0),
+          arrears_amount: 0,
+          status: "paid",
+        })
+        .eq("id", row.id),
+    );
+
+    const scheduleResults = await Promise.all(scheduleUpdates);
+    const scheduleError = scheduleResults.find((result) => result.error)?.error;
+
+    if (scheduleError) {
+      setMessage(
+        scheduleError.message || "Aid was closed, but schedule cleanup failed.",
+      );
+      setActionLoanId(null);
+      return;
+    }
+
+    await supabase.from("loan_audit_logs").insert({
+      loan_id: loan.id,
+      action: "early_clearance",
+      old_data: loan,
+      new_data: {
+        status: "closed",
+        amount_repaid: amountRepaid,
+        outstanding_balance: 0,
+      },
+      reason: "Early Aid clearance processed after full repayment.",
+      performed_by: currentAdmin?.id || null,
+    });
+
+    setActionLoanId(null);
+    setMessage("Aid clearance processed successfully.");
     await loadLoans();
+
+    if (selectedLoanId === loan.id) {
+      await loadLoanSchedule(loan.id);
+    }
   }
 
   function openEditLoanModal(loan: Loan) {
@@ -571,7 +948,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       ["active", "closed"].includes(editingLoan.status)
     ) {
       const confirmed = window.confirm(
-        "This aid record is already active or closed. Editing principal or duration will update the aid totals, but it will not automatically rebuild paid repayment history. Continue?"
+        "This aid record is already active or closed. Editing principal or duration will update the aid totals, but it will not automatically rebuild paid repayment history. Continue?",
       );
 
       if (!confirmed) return;
@@ -581,7 +958,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     const amountRepaid = Number(editingLoan.amount_repaid || 0);
     const recalculatedOutstanding = Math.max(
       computed.totalExpectedRepayment - amountRepaid,
-      0
+      0,
     );
 
     const selectedStatus = editLoan.status || editingLoan.status || "pending";
@@ -590,7 +967,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     const now = new Date().toISOString();
     const memberCanBeChanged = !["active", "closed"].includes(
-      editingLoan.status
+      editingLoan.status,
     );
 
     const updatePayload: Record<string, any> = {
@@ -640,21 +1017,23 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    const { error: auditError } = await supabase.from("loan_audit_logs").insert({
-      loan_id: editingLoan.id,
-      action: "edited",
-      old_data: editingLoan,
-      new_data: updatePayload,
-      reason,
-      performed_by: currentAdmin?.id || null,
-    });
+    const { error: auditError } = await supabase
+      .from("loan_audit_logs")
+      .insert({
+        loan_id: editingLoan.id,
+        action: "edited",
+        old_data: editingLoan,
+        new_data: updatePayload,
+        reason,
+        performed_by: currentAdmin?.id || null,
+      });
 
     closeEditLoanModal();
     await loadLoans();
 
     if (auditError) {
       setMessage(
-        `Aid record updated successfully, but audit log was not saved: ${auditError.message}`
+        `Aid record updated successfully, but audit log was not saved: ${auditError.message}`,
       );
       return;
     }
@@ -669,14 +1048,14 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
     }
 
     const confirmed = window.confirm(
-      "Delete this aid record? It will be hidden from the Aid Management table but kept in the database for audit history."
+      "Delete this aid record? It will be hidden from the Aid Management table but kept in the database for audit history.",
     );
 
     if (!confirmed) return;
 
     if (Number(loan.amount_repaid || 0) > 0) {
       const financialConfirm = window.confirm(
-        "This aid record already has repayments recorded. Deleting it will hide it from the table, but the audit history will remain. Continue?"
+        "This aid record already has repayments recorded. Deleting it will hide it from the table, but the audit history will remain. Continue?",
       );
 
       if (!financialConfirm) return;
@@ -713,14 +1092,16 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       return;
     }
 
-    const { error: auditError } = await supabase.from("loan_audit_logs").insert({
-      loan_id: loan.id,
-      action: "deleted",
-      old_data: loan,
-      new_data: deletePayload,
-      reason: reason.trim(),
-      performed_by: currentAdmin?.id || null,
-    });
+    const { error: auditError } = await supabase
+      .from("loan_audit_logs")
+      .insert({
+        loan_id: loan.id,
+        action: "deleted",
+        old_data: loan,
+        new_data: deletePayload,
+        reason: reason.trim(),
+        performed_by: currentAdmin?.id || null,
+      });
 
     if (selectedLoanId === loan.id) {
       setSelectedLoanId("");
@@ -732,7 +1113,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     if (auditError) {
       setMessage(
-        `Aid record deleted successfully, but audit log was not saved: ${auditError.message}`
+        `Aid record deleted successfully, but audit log was not saved: ${auditError.message}`,
       );
       return;
     }
@@ -756,7 +1137,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     const totalPrincipal = loans.reduce(
       (sum, loan) => sum + Number(loan.loan_amount || 0),
-      0
+      0,
     );
 
     const totalOutstanding = loans
@@ -765,7 +1146,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
     const totalRepaid = loans.reduce(
       (sum, loan) => sum + Number(loan.amount_repaid || 0),
-      0
+      0,
     );
 
     return {
@@ -782,7 +1163,10 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
   return (
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard title="Total Aid Records" value={loanStats.totalLoans.toString()} />
+        <MetricCard
+          title="Total Aid Records"
+          value={loanStats.totalLoans.toString()}
+        />
         <MetricCard
           title="Pending Review"
           value={loanStats.pendingLoans.toString()}
@@ -791,7 +1175,10 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
           title="Approved Awaiting Disbursement"
           value={loanStats.approvedLoans.toString()}
         />
-        <MetricCard title="Active Aid Records" value={loanStats.activeLoans.toString()} />
+        <MetricCard
+          title="Active Aid Records"
+          value={loanStats.activeLoans.toString()}
+        />
         <MetricCard
           title="Principal Created"
           value={`FCFA ${loanStats.totalPrincipal.toLocaleString()}`}
@@ -809,7 +1196,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="p-8">
           <h2 className="text-2xl font-black text-[#0D2D6E]">
-           Create New Aid Record
+            Create New Aid Record
           </h2>
 
           {message && (
@@ -861,7 +1248,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                   setNewLoan({ ...newLoan, duration_days: e.target.value })
                 }
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-                placeholder="Duration in days"
+                placeholder="Duration in collection days"
               />
 
               <input
@@ -875,7 +1262,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
             </div>
           ) : (
             <p className="mt-6 font-semibold text-slate-600">
-             You do not have permission to create aid records.
+              You do not have permission to create aid records.
             </p>
           )}
 
@@ -883,8 +1270,12 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
             <p className="text-sm font-black uppercase tracking-widest text-slate-500">
               Aid Computation Preview
             </p>
+            <p className="mt-2 text-xs font-semibold text-slate-500">
+              Calculated with 24 collection days per Aid month. Repayment
+              schedules skip Saturdays and Sundays.
+            </p>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-5">
+            <div className="mt-4 grid gap-4 md:grid-cols-6">
               <PreviewItem
                 label="Insurance"
                 value={`FCFA ${preview.insuranceFee.toLocaleString()}`}
@@ -898,6 +1289,12 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                 value={`FCFA ${preview.totalInterest.toLocaleString()}`}
               />
               <PreviewItem
+                label="Aid Months"
+                value={`${preview.interestMonths.toLocaleString(undefined, {
+                  maximumFractionDigits: 2,
+                })} × 24 days`}
+              />
+              <PreviewItem
                 label="Total Repayment"
                 value={`FCFA ${preview.totalExpectedRepayment.toLocaleString()}`}
               />
@@ -905,7 +1302,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                 label="Daily Payment"
                 value={`FCFA ${preview.dailyPaymentAmount.toLocaleString(
                   undefined,
-                  { maximumFractionDigits: 0 }
+                  { maximumFractionDigits: 0 },
                 )}`}
               />
             </div>
@@ -930,7 +1327,8 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
               </h2>
               {isSuperAdmin && (
                 <p className="mt-2 text-sm font-semibold text-slate-500">
-                  Super Admin controls are enabled: Edit and Delete are available.
+                  Super Admin controls are enabled: Edit and Delete are
+                  available.
                 </p>
               )}
             </div>
@@ -961,6 +1359,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                     <th className="py-4">Created</th>
                     <th className="py-4">Approved</th>
                     <th className="py-4">Disbursed</th>
+                    <th className="py-4">Repayment Start</th>
                     <th className="py-4">Action</th>
                   </tr>
                 </thead>
@@ -987,7 +1386,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                         <td className="py-4 font-bold">
                           FCFA{" "}
                           {Number(
-                            loan.total_expected_repayment || 0
+                            loan.total_expected_repayment || 0,
                           ).toLocaleString()}
                         </td>
 
@@ -999,25 +1398,27 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                         <td className="py-4 font-black text-[#0D2D6E]">
                           FCFA{" "}
                           {Number(
-                            loan.outstanding_balance || 0
+                            loan.outstanding_balance || 0,
                           ).toLocaleString()}
                         </td>
 
                         <td className="py-4">
                           FCFA{" "}
                           {Number(
-                            loan.daily_payment_amount || 0
+                            loan.daily_payment_amount || 0,
                           ).toLocaleString(undefined, {
                             maximumFractionDigits: 0,
                           })}
                         </td>
 
-                        <td className="py-4">{loan.duration_days} days</td>
+                        <td className="py-4">
+                          {loan.duration_days} collection days
+                        </td>
 
                         <td className="py-4">
                           <span
                             className={`rounded-full px-3 py-1 text-xs font-bold ${statusStyle(
-                              loan.status
+                              loan.status,
                             )}`}
                           >
                             {loan.status?.toUpperCase()}
@@ -1040,6 +1441,10 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                           {loan.disbursed_at
                             ? new Date(loan.disbursed_at).toLocaleDateString()
                             : "-"}
+                        </td>
+
+                        <td className="py-4 text-slate-600">
+                          {loan.repayment_start_date || "-"}
                         </td>
 
                         <td className="py-4">
@@ -1083,11 +1488,11 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
                             {loan.status === "active" && (
                               <Button
-                                onClick={() => closeLoan(loan)}
+                                onClick={() => processAidClearance(loan)}
                                 disabled={!canManageLoans || isWorking}
-                                className="px-4 py-2"
+                                className="bg-[#009B5A] px-4 py-2 hover:opacity-90"
                               >
-                                Close
+                                {isWorking ? "Working..." : "Clear Aid"}
                               </Button>
                             )}
 
@@ -1105,6 +1510,14 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
 
                             {isSuperAdmin && (
                               <>
+                                <button
+                                  onClick={() => recalculateAidLoan(loan)}
+                                  disabled={isWorking}
+                                  className="rounded-xl bg-[#0D2D6E] px-4 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-60"
+                                >
+                                  Recalculate
+                                </button>
+
                                 <button
                                   onClick={() => openEditLoanModal(loan)}
                                   disabled={isWorking}
@@ -1144,7 +1557,8 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                 </h2>
 
                 <p className="mt-2 text-sm text-slate-600">
-                  Showing {selectedLoanSchedule.length} scheduled repayment day(s).
+                  Showing {selectedLoanSchedule.length} scheduled repayment
+                  day(s).
                 </p>
               </div>
 
@@ -1226,7 +1640,8 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                   Edit Aid Record
                 </h2>
                 <p className="mt-2 text-sm font-semibold text-slate-500">
-                  Changes are restricted to Super Admin and saved in the audit log.
+                  Changes are restricted to Super Admin and saved in the audit
+                  log.
                 </p>
               </div>
 
@@ -1290,13 +1705,13 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                     setEditLoan({ ...editLoan, loan_amount: e.target.value })
                   }
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-                placeholder="Aid amount"
+                  placeholder="Aid amount"
                 />
               </div>
 
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-600">
-                  Duration in Days
+                  Duration in Collection Days
                 </label>
                 <input
                   type="number"
@@ -1305,7 +1720,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                     setEditLoan({ ...editLoan, duration_days: e.target.value })
                   }
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none"
-                  placeholder="Duration in days"
+                  placeholder="Duration in collection days"
                 />
               </div>
 
@@ -1361,8 +1776,12 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
               <p className="text-sm font-black uppercase tracking-widest text-slate-500">
                 Updated Computation Preview
               </p>
+              <p className="mt-2 text-xs font-semibold text-slate-500">
+                Calculated with 24 collection days per Aid month. Repayment
+                schedules skip Saturdays and Sundays.
+              </p>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-5">
+              <div className="mt-4 grid gap-4 md:grid-cols-6">
                 <PreviewItem
                   label="Insurance"
                   value={`FCFA ${editPreview.insuranceFee.toLocaleString()}`}
@@ -1376,6 +1795,15 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                   value={`FCFA ${editPreview.totalInterest.toLocaleString()}`}
                 />
                 <PreviewItem
+                  label="Aid Months"
+                  value={`${editPreview.interestMonths.toLocaleString(
+                    undefined,
+                    {
+                      maximumFractionDigits: 2,
+                    },
+                  )} × 24 days`}
+                />
+                <PreviewItem
                   label="Total Repayment"
                   value={`FCFA ${editPreview.totalExpectedRepayment.toLocaleString()}`}
                 />
@@ -1383,7 +1811,7 @@ export default function LoanModule({ currentAdmin }: { currentAdmin: any }) {
                   label="Daily Payment"
                   value={`FCFA ${editPreview.dailyPaymentAmount.toLocaleString(
                     undefined,
-                    { maximumFractionDigits: 0 }
+                    { maximumFractionDigits: 0 },
                   )}`}
                 />
               </div>
